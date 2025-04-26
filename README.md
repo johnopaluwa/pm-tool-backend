@@ -97,3 +97,38 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 ## License
 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+
+## Implemented Features
+
+This NestJS backend application provides API endpoints to support the frontend application. The following modules and features have been implemented:
+
+- **Projects Module:**
+  - `GET /projects`: Returns a list of all projects.
+  - `GET /projects/:id`: Returns details for a specific project by ID.
+  - `POST /projects`: Creates a new project.
+- **Prediction Reviews Module:**
+  - `GET /prediction-reviews`: Returns a list of all prediction reviews.
+  - `GET /prediction-reviews/:id`: Returns details for a specific prediction review by ID.
+  - `GET /prediction-reviews/project/:projectId`: Returns prediction reviews for a specific project ID.
+  - `POST /prediction-reviews`: Creates a new prediction review.
+- **Predictions Module:**
+  - `POST /predictions/generate`: Generates predictions based on provided project data.
+  - `POST /predictions/feedback`: Receives feedback on predictions.
+  - `GET /predictions/history/:projectId`: Returns prediction history for a specific project ID.
+- **CORS Enabled:** Configured to allow cross-origin requests from the frontend application.
+
+## Running the Backend
+
+To run the backend application in development mode:
+
+1.  Navigate to the `pm-backend` directory in your terminal.
+2.  Install dependencies:
+    ```bash
+    npm install
+    ```
+3.  Start the application in watch mode (reloads on file changes):
+    ```bash
+    npm run start:dev
+    ```
+
+The backend server will typically run on `http://localhost:3000`.

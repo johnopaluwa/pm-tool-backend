@@ -1,8 +1,11 @@
 import { Module } from '@nestjs/common';
-import { PredictionsController } from './predictions/predictions.controller';
-import { PredictionsService } from './predictions/predictions.service';
+import { PredictionReviewsModule } from '../prediction-reviews/prediction-reviews.module'; // Import PredictionReviewsModule
+import { ProjectsModule } from '../projects/projects.module'; // Import ProjectsModule
+import { PredictionsController } from './predictions.controller'; // Corrected import path
+import { PredictionsService } from './predictions.service';
 
 @Module({
+  imports: [ProjectsModule, PredictionReviewsModule], // Import the necessary modules
   controllers: [PredictionsController],
   providers: [PredictionsService],
 })

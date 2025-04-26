@@ -4,6 +4,7 @@ import { PredictionReviewsService } from './prediction-reviews/prediction-review
 
 @Module({
   controllers: [PredictionReviewsController],
-  providers: [PredictionReviewsService]
+  providers: [PredictionReviewsService],
+  exports: [PredictionReviewsService], // Export the service
 })
 export class PredictionReviewsModule {}
