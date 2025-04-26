@@ -38,8 +38,17 @@ export class PredictionsService {
     });
   }
 
-  async generatePredictions(projectData: any): Promise<Prediction[]> {
-    console.log('Generating predictions for project:', projectData);
+  async generatePredictions(
+    projectData: any,
+    projectId: number,
+  ): Promise<Prediction[]> {
+    console.log(
+      `Generating predictions for project ID: ${projectId}`,
+      projectData,
+    );
+
+    // Update project status to 'predicting'
+    this.projectsService.updateProjectStatus(projectId, 'predicting');
 
     // Fetch historical data
     const allProjects = this.projectsService.findAll();
@@ -147,37 +156,45 @@ Ensure the JSON is valid and can be directly parsed. Do not include any introduc
 
       // Attempt to parse the JSON response
       // Need to handle cases where the API might return extra text or markdown
-      const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/);
+      // Attempt to parse the JSON response, handling potential surrounding text or markdown
       let predictions: Prediction[] = [];
+      let jsonString = '';
+      const startIndex = text.indexOf('[');
+      const endIndex = text.lastIndexOf(']');
 
-      if (jsonMatch && jsonMatch[1]) {
-        try {
-          predictions = JSON.parse(jsonMatch[1]);
-        } catch (parseError) {
-          console.error(
-            'Failed to parse JSON from OpenRouter response:',
-            parseError,
-          );
-          // Fallback or error handling if JSON parsing fails
-          throw new InternalServerErrorException(
-            'Failed to parse predictions from AI response.',
-          );
-        }
+      if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+        jsonString = text.substring(startIndex, endIndex + 1);
       } else {
-        // Attempt to parse directly if no code block is found
-        try {
-          predictions = JSON.parse(text);
-        } catch (parseError) {
-          console.error(
-            'Failed to parse raw text as JSON from OpenRouter response:',
-            parseError,
-          );
-          throw new InternalServerErrorException(
-            'Failed to parse predictions from AI response.',
-          );
-        }
+        console.error(
+          'Could not find valid JSON array in AI response. Raw text:',
+          text,
+        );
+        throw new InternalServerErrorException(
+          'AI response did not contain a valid JSON array.',
+        );
       }
 
+      // Remove all non-ASCII characters from the extracted JSON string
+      const cleanedJsonString = jsonString.replace(/[^\x00-\x7F]/g, '');
+
+      try {
+        predictions = JSON.parse(cleanedJsonString);
+        console.log('Successfully parsed JSON string:', cleanedJsonString);
+      } catch (parseError) {
+        console.error(
+          'Failed to parse extracted and cleaned JSON string:',
+          parseError,
+          'Extracted string:',
+          jsonString,
+          'Cleaned string:',
+          cleanedJsonString,
+          'Raw text:',
+          text,
+        );
+        throw new InternalServerErrorException(
+          'Failed to parse predictions from AI response after cleaning.',
+        );
+      }
       // Assign unique IDs if not provided by the API and ensure sourceProject is set
       predictions = predictions.map((pred, index) => ({
         ...pred,
@@ -188,9 +205,14 @@ Ensure the JSON is valid and can be directly parsed. Do not include any introduc
         status: pred.status || 'pending', // Ensure status is set
       }));
 
+      // Update project status to 'completed' after successful generation
+      this.projectsService.updateProjectStatus(projectId, 'completed');
+
       return predictions;
     } catch (error) {
       console.error('Error calling OpenRouter API:', error);
+      // Consider updating status to an error state if needed
+      this.projectsService.updateProjectStatus(projectId, 'new'); // Revert to 'new' on error
       throw new InternalServerErrorException(
         'Failed to generate predictions using AI.',
       );

@@ -4,7 +4,7 @@ export interface Project {
   id: number;
   name: string;
   client: string;
-  status: string;
+  status: 'new' | 'predicting' | 'completed';
   description: string;
   projectType: string;
   clientIndustry: string;
@@ -22,7 +22,7 @@ export class ProjectsService {
       id: 1,
       name: 'Project Alpha',
       client: 'Client A',
-      status: 'Active',
+      status: 'completed', // Changed to 'predicting' as it has prediction reviews
       description: 'This is a description for Project Alpha.',
       projectType: 'Web App',
       clientIndustry: 'Finance',
@@ -37,7 +37,7 @@ export class ProjectsService {
       id: 2,
       name: 'Project Beta',
       client: 'Client B',
-      status: 'Planning',
+      status: 'completed', // Changed to 'predicting' as it has prediction reviews
       description: 'This is a description for Project Beta.',
       projectType: 'Mobile App',
       clientIndustry: 'Retail',
@@ -52,7 +52,7 @@ export class ProjectsService {
       id: 3,
       name: 'Project Gamma',
       client: 'Client C',
-      status: 'Completed',
+      status: 'new', // Changed to 'new' as it has no prediction reviews
       description: 'This is a description for Project Gamma.',
       projectType: 'API',
       clientIndustry: 'Healthcare',
@@ -88,11 +88,23 @@ export class ProjectsService {
       id: newId,
       name: project.projectName,
       client: project.clientName,
-      status: 'Planning',
+      status: 'new', // New projects start with status 'new'
     };
     this.mockProjects.push(newProject);
     console.log('New project added:', newProject);
     console.log('All projects:', this.mockProjects);
     return newId;
+  }
+  updateProjectStatus(
+    id: number,
+    status: 'new' | 'predicting' | 'completed',
+  ): Project | undefined {
+    const project = this.mockProjects.find((p) => p.id === id);
+    if (project) {
+      project.status = status;
+      console.log(`Project ${id} status updated to ${status}`);
+      return project;
+    }
+    return undefined;
   }
 }

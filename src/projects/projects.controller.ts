@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { CreateProjectDto } from './dto/create-project.dto';
+import { UpdateProjectStatusDto } from './dto/update-project-status.dto';
 import { ProjectsService } from './projects.service';
 
 @Controller('projects')
@@ -19,5 +20,15 @@ export class ProjectsController {
   @Post()
   create(@Body() createProjectDto: CreateProjectDto) {
     return this.projectsService.addProject(createProjectDto);
+  }
+  @Patch(':id/status')
+  updateStatus(
+    @Param('id') id: string,
+    @Body() updateProjectStatusDto: UpdateProjectStatusDto,
+  ) {
+    return this.projectsService.updateProjectStatus(
+      +id,
+      updateProjectStatusDto.status,
+    );
   }
 }

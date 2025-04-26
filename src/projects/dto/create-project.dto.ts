@@ -9,4 +9,5 @@ export class CreateProjectDto {
   keywords: string;
   businessSpecification: string;
   description: string;
+  status: 'new' | 'predicting' | 'completed';
 }

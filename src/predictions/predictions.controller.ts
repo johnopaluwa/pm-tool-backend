@@ -7,10 +7,13 @@ import { PredictionsService } from './predictions.service';
 export class PredictionsController {
   constructor(private readonly predictionsService: PredictionsService) {}
 
-  @Post('generate')
-  generatePredictions(@Body() projectData: any): Promise<Prediction[]> {
-    // Updated return type to Promise
-    return this.predictionsService.generatePredictions(projectData);
+  @Post('generate/:projectId')
+  generatePredictions(
+    @Param('projectId') projectId: string,
+    @Body() projectData: any,
+  ): Promise<Prediction[]> {
+    // Updated return type to Promise and added projectId parameter
+    return this.predictionsService.generatePredictions(projectData, +projectId);
   }
 
   @Post('feedback')
