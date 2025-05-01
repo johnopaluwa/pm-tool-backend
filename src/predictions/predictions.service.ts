@@ -93,7 +93,47 @@ Keywords: ${project.keywords}
 Business Specification: ${project.businessSpecification}
 Description: ${project.description}
 Predicted User Stories/Bugs:
-${predictionsForProject.map((p) => `- [${p.type}] ${p.title}: ${p.description}`).join('\n')}
+${predictionsForProject
+  .map((p) => {
+    let details = `- [${p.type}] ${p.title}: ${p.description}`;
+    if (p.type === 'user-story') {
+      if (p.acceptanceCriteria)
+        details += `\n  Acceptance Criteria: ${p.acceptanceCriteria.join('; ')}`;
+      if (p.dependencies)
+        details += `\n  Dependencies: ${p.dependencies.join(', ')}`;
+      if (p.assumptions)
+        details += `\n  Assumptions: ${p.assumptions.join('; ')}`;
+      if (p.edgeCases) details += `\n  Edge Cases: ${p.edgeCases.join('; ')}`;
+      if (p.nonFunctionalRequirements)
+        details += `\n  Non-Functional Requirements: ${p.nonFunctionalRequirements}`;
+      if (p.visuals) details += `\n  Visuals: ${p.visuals.join(', ')}`;
+      if (p.dataRequirements)
+        details += `\n  Data Requirements: ${p.dataRequirements}`;
+      if (p.impact) details += `\n  Impact: ${p.impact}`;
+      if (p.priority) details += `\n  Priority: ${p.priority}`;
+    } else if (p.type === 'bug') {
+      if (p.stepsToReproduce)
+        details += `\n  Steps to Reproduce: ${p.stepsToReproduce.join(' -> ')}`;
+      if (p.actualResult) details += `\n  Actual Result: ${p.actualResult}`;
+      if (p.expectedResult)
+        details += `\n  Expected Result: ${p.expectedResult}`;
+      if (p.environment) details += `\n  Environment: ${p.environment}`;
+      if (p.userAccountDetails)
+        details += `\n  User/Account Details: ${p.userAccountDetails}`;
+      if (p.screenshotsVideos)
+        details += `\n  Screenshots/Videos: ${p.screenshotsVideos.join(', ')}`;
+      if (p.errorMessagesLogs)
+        details += `\n  Error Messages/Logs: ${p.errorMessagesLogs}`;
+      if (p.frequencyOfOccurrence)
+        details += `\n  Frequency: ${p.frequencyOfOccurrence}`;
+      if (p.severity) details += `\n  Severity: ${p.severity}`;
+      if (p.workaround) details += `\n  Workaround: ${p.workaround}`;
+      if (p.relatedIssues)
+        details += `\n  Related Issues: ${p.relatedIssues.join(', ')}`;
+    }
+    return details;
+  })
+  .join('\n')}
 ---`;
         })
         .filter((block) => block !== '')
@@ -121,16 +161,42 @@ Keywords: ${projectData.keywords}
 Business Specification: ${projectData.businessSpecification}
 Description: ${projectData.description}
 
-Provide the output as a JSON array of objects, where each object has the following structure:
+Provide the output as a JSON array of objects, where each object has the following structure, including fields relevant to user stories or bugs. Ensure all fields defined in the structure are present in each object, using empty strings or appropriate default values if a specific value is not applicable.
 {
-  "id": "unique-id-string",
-  "type": "userStory" | "bug",
-  "title": "Concise title",
-  "description": "Detailed description",
-  "similarityScore": "number between 0 and 100 representing relevance to the new project based on historical data",
-  "frequency": "number between 0 and 100 representing how common this type of prediction is in the historical data",
-  "sourceProject": "${projectData.projectName}", // Use the new project name as source
-  "status": "pending" // Default status
+  "id": "unique-id-string", // REQUIRED
+  "type": "user-story" | "bug", // REQUIRED: Must be one of these two values
+  "title": "Concise title", // REQUIRED
+  "description": "Detailed description", // REQUIRED
+  "similarityScore": "number between 0 and 100 representing relevance to the new project based on historical data", // REQUIRED
+  "frequency": "number between 0 and 100 representing how common this type of prediction is in the historical data", // REQUIRED
+  "sourceProject": "${projectData.projectName}", // REQUIRED: Use the new project name as source
+  "status": "pending", // REQUIRED: Default status
+  "estimatedTime": number, // REQUIRED: Estimated time in hours. It is crucial that this field is accurately predicted and included for each item, as this information is essential for the frontend display.
+
+  // Fields for User Stories (include only if type is 'user-story')
+  "acceptanceCriteria": string[], // REQUIRED: List of acceptance criteria
+  "dependencies": string[], // REQUIRED: List of dependencies (e.g., IDs of other stories/bugs)
+  "assumptions": string[], // REQUIRED: List of assumptions
+  "edgeCases": string[], // REQUIRED: List of edge cases
+  "nonFunctionalRequirements": string, // REQUIRED: Text field for non-functional requirements
+  "visuals": string[], // REQUIRED: List of URLs or references to visuals/mockups
+  "dataRequirements": string, // REQUIRED: Text field for data requirements
+  "impact": string, // REQUIRED: Text field for impact
+  "priority": "Low" | "Medium" | "High" | "Critical", // REQUIRED: Priority level
+
+
+  // Fields for Bug Details (include only if type is 'bug')
+  "stepsToReproduce": string[], // REQUIRED: List of steps to reproduce
+  "actualResult": string, // REQUIRED: Text field for actual result
+  "expectedResult": string, // REQUIRED: Text field for expected result
+  "environment": string, // REQUIRED: Text field for environment details
+  "userAccountDetails": string, // REQUIRED: Text field for user/account details (non-sensitive)
+  "screenshotsVideos": string[], // REQUIRED: List of URLs or references to screenshots/videos
+  "errorMessagesLogs": string, // REQUIRED: Text field for error messages/logs
+  "frequencyOfOccurrence": "Consistent" | "Intermittent" | "Rare", // REQUIRED: Frequency of occurrence
+  "severity": "Cosmetic" | "Minor" | "Major" | "Blocking", // REQUIRED: Severity level
+  "workaround": string, // REQUIRED: Text field for workaround
+  "relatedIssues": string[] // REQUIRED: List of related issue IDs
 }
 
 Ensure the JSON is valid and can be directly parsed. Do not include any introductory or concluding text outside the JSON array. Generate at least 3 user stories and 2 bugs that are relevant to the new project based on its characteristics and the provided historical data.`;
@@ -196,13 +262,42 @@ Ensure the JSON is valid and can be directly parsed. Do not include any introduc
         );
       }
       // Assign unique IDs if not provided by the API and ensure sourceProject is set
-      predictions = predictions.map((pred, index) => ({
-        ...pred,
+      predictions = predictions.map((pred: any, index: number) => ({
         id:
           pred.id ||
           `${projectData.projectName}-${pred.type}-${index}-${Date.now()}`, // Generate a unique ID if missing
-        sourceProject: projectData.projectName, // Ensure sourceProject is set
-        status: pred.status || 'pending', // Ensure status is set
+        type: pred.type, // REQUIRED
+        title: pred.title || '', // REQUIRED: Provide default empty string
+        description: pred.description || '', // REQUIRED: Provide default empty string
+        similarityScore: pred.similarityScore ?? 0, // REQUIRED: Provide default 0 for number
+        frequency: pred.frequency ?? 0, // REQUIRED: Provide default 0 for number
+        sourceProject: pred.sourceProject || projectData.projectName, // REQUIRED: Ensure sourceProject is set
+        status: pred.status || 'pending', // REQUIRED: Ensure status is set, default to 'pending'
+        estimatedTime: pred.estimatedTime ?? 0, // REQUIRED: Provide default 0 for number
+
+        // Fields for User Stories (include only if type is 'user-story')
+        acceptanceCriteria: pred.acceptanceCriteria || [], // REQUIRED: Provide default empty array
+        dependencies: pred.dependencies || [], // REQUIRED: Provide default empty array
+        assumptions: pred.assumptions || [], // REQUIRED: Provide default empty array
+        edgeCases: pred.edgeCases || [], // REQUIRED: Provide default empty array
+        nonFunctionalRequirements: pred.nonFunctionalRequirements || '', // REQUIRED: Provide default empty string
+        visuals: pred.visuals || [], // REQUIRED: Provide default empty array
+        dataRequirements: pred.dataRequirements || '', // REQUIRED: Provide default empty string
+        impact: pred.impact || '', // REQUIRED: Provide default empty string
+        priority: pred.priority || 'Low', // REQUIRED: Provide default 'Low'
+
+        // Fields for Bug Details (include only if type is 'bug')
+        stepsToReproduce: pred.stepsToReproduce || [], // REQUIRED: Provide default empty array
+        actualResult: pred.actualResult || '', // REQUIRED: Provide default empty string
+        expectedResult: pred.expectedResult || '', // REQUIRED: Provide default empty string
+        environment: pred.environment || '', // REQUIRED: Provide default empty string
+        userAccountDetails: pred.userAccountDetails || '', // REQUIRED: Provide default empty string
+        screenshotsVideos: pred.screenshotsVideos || [], // REQUIRED: Provide default empty array
+        errorMessagesLogs: pred.errorMessagesLogs || '', // REQUIRED: Provide default empty string
+        frequencyOfOccurrence: pred.frequencyOfOccurrence || 'Consistent', // REQUIRED: Provide default 'Consistent'
+        severity: pred.severity || 'Minor', // REQUIRED: Provide default 'Minor'
+        workaround: pred.workaround || '', // REQUIRED: Provide default empty string
+        relatedIssues: pred.relatedIssues || [], // REQUIRED: Provide default empty array
       }));
 
       // Update project status to 'completed' after successful generation
