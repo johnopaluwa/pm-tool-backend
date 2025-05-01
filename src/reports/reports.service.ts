@@ -1,195 +1,162 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
-import * as fs from 'fs';
-import * as path from 'path';
-import { PredictionReviewsService } from '../prediction-reviews/prediction-reviews/prediction-reviews.service';
-import { PredictionsService } from '../predictions/predictions.service';
-import { ProjectsService } from '../projects/projects.service';
-
-const REPORT_STATUS_FILE = path.join(__dirname, 'report-status.json');
-
-interface ReportStatusData {
-  overallReports: {
-    completionRate?: number;
-    statusDistribution?: { [status: string]: number };
-    status: 'pending' | 'generating' | 'completed' | 'failed';
-  };
-  projectReports: {
-    [projectId: number]: {
-      predictionsCount?: number;
-      predictionTypeDistribution?: { [type: string]: number };
-      status: 'pending' | 'generating' | 'completed' | 'failed';
-    };
-  };
-}
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
+import { SupabaseClient } from '@supabase/supabase-js';
+import { PredictionReviewsService } from '../prediction-reviews/prediction-reviews/prediction-reviews.service'; // Import PredictionReviewsService for types
+import { ProjectsService } from '../projects/projects.service'; // Import ProjectsService for types
+import { SupabaseMapper } from '../supabase/supabase-mapper'; // Import the mapper
+import { SupabaseService } from '../supabase/supabase.service';
 
 @Injectable()
-export class ReportsService implements OnModuleInit {
-  private overallReports: ReportStatusData['overallReports'] = {
-    status: 'pending',
-  };
-  private projectReports: ReportStatusData['projectReports'] = {};
+export class ReportsService {
+  private supabase: SupabaseClient;
+  private readonly logger = new Logger(ReportsService.name);
 
   constructor(
-    private readonly projectsService: ProjectsService,
-    private readonly predictionsService: PredictionsService,
-    private readonly predictionReviewsService: PredictionReviewsService,
-  ) {}
-
-  onModuleInit() {
-    this.loadReportStatus();
+    private readonly supabaseService: SupabaseService,
+    private readonly projectsService: ProjectsService, // Keep for type hinting if needed, though direct Supabase calls are preferred
+    private readonly predictionReviewsService: PredictionReviewsService, // Keep for type hinting if needed
+  ) {
+    this.supabase = this.supabaseService.getClient();
   }
 
-  private loadReportStatus(): void {
-    if (fs.existsSync(REPORT_STATUS_FILE)) {
-      try {
-        const data = fs.readFileSync(REPORT_STATUS_FILE, 'utf8');
-        const reportStatusData: ReportStatusData = JSON.parse(data);
-        this.overallReports = reportStatusData.overallReports;
-        this.projectReports = reportStatusData.projectReports;
-        console.log('Report status loaded from file.');
-      } catch (error) {
-        console.error('Failed to load report status from file:', error);
-      }
-    }
-  }
-
-  private saveReportStatus(): void {
-    const reportStatusData: ReportStatusData = {
-      overallReports: this.overallReports,
-      projectReports: this.projectReports,
-    };
+  async generateOverallReports(): Promise<{
+    completionRate: number;
+    statusDistribution: { [status: string]: number };
+  }> {
     try {
-      fs.writeFileSync(
-        REPORT_STATUS_FILE,
-        JSON.stringify(reportStatusData, null, 2),
-        'utf8',
-      );
-      console.log('Report status saved to file.');
-    } catch (error) {
-      console.error('Failed to save report status to file:', error);
-    }
-  }
+      const { data: projectsData, error } = await this.supabase
+        .from('projects')
+        .select('*'); // Select all to use mapper
 
-  async generateOverallReports(): Promise<void> {
-    this.overallReports.status = 'generating';
-    this.saveReportStatus(); // Save status change
-    try {
-      const projects = this.projectsService.findAll();
-      if (projects.length === 0) {
-        this.overallReports.completionRate = 0;
-      } else {
-        const completedProjects = projects.filter(
-          (project) => project.status === 'completed',
+      if (error) {
+        this.logger.error(
+          `Error fetching projects for overall reports from Supabase: ${error.message}`,
+          error.stack,
         );
-        this.overallReports.completionRate =
-          (completedProjects.length / projects.length) * 100;
+        throw new InternalServerErrorException(error.message);
       }
 
-      const distribution: { [status: string]: number } = {
+      const projects = projectsData
+        ? projectsData.map((item) => SupabaseMapper.fromSupabaseProject(item))
+        : []; // Use mapper
+
+      if (!projects || projects.length === 0) {
+        return {
+          completionRate: 0,
+          statusDistribution: { new: 0, predicting: 0, completed: 0 },
+        };
+      }
+
+      const completedProjects = projects.filter(
+        (project) => project.status === 'completed',
+      );
+      const completionRate = (completedProjects.length / projects.length) * 100;
+
+      const statusDistribution: { [status: string]: number } = {
         new: 0,
         predicting: 0,
         completed: 0,
       };
       projects.forEach((project) => {
-        if (distribution[project.status] !== undefined) {
-          distribution[project.status]++;
+        if (statusDistribution[project.status] !== undefined) {
+          statusDistribution[project.status]++;
         }
       });
-      this.overallReports.statusDistribution = distribution;
 
-      this.overallReports.status = 'completed';
-      this.saveReportStatus(); // Save status change and data
-    } catch (error) {
-      console.error('Failed to generate overall reports:', error);
-      this.overallReports.status = 'failed';
-      this.saveReportStatus(); // Save status change
+      console.log('Overall reports generated.');
+      return { completionRate, statusDistribution };
+    } catch (error: any) {
+      this.logger.error(
+        'Failed to generate overall reports:',
+        error.message,
+        error.stack,
+      );
+      throw new InternalServerErrorException(
+        `Failed to generate overall reports: ${error.message}`,
+      );
     }
   }
 
-  getOverallReportsStatus(): 'pending' | 'generating' | 'completed' | 'failed' {
-    return this.overallReports.status;
-  }
-
-  getOverallProjectCompletionRate(): number | undefined {
-    if (this.overallReports.status === 'completed') {
-      return this.overallReports.completionRate;
-    }
-    return undefined;
-  }
-
-  getOverallProjectStatusDistribution():
-    | { [status: string]: number }
-    | undefined {
-    if (this.overallReports.status === 'completed') {
-      return this.overallReports.statusDistribution;
-    }
-    return undefined;
-  }
-
-  async generateProjectReports(projectId: number): Promise<void> {
-    this.projectReports[projectId] = { status: 'generating' };
-    this.saveReportStatus(); // Save status change
+  async generateProjectReports(projectId: number): Promise<{
+    predictionsCount: number;
+    predictionTypeDistribution: { [type: string]: number };
+  }> {
     try {
-      const predictionReviews = await this.predictionReviewsService
-        .getPredictionReviewsByProjectId(projectId)
-        .toPromise();
+      const { data: predictionsData, error } = await this.supabase
+        .from('predictions')
+        .select('*') // Select all to use mapper
+        .eq('project_id', projectId);
 
-      let totalPredictions = 0;
-      if (predictionReviews) {
-        for (const review of predictionReviews) {
-          totalPredictions += review.predictions.length;
-        }
+      if (error) {
+        this.logger.error(
+          `Error fetching predictions for project reports from Supabase: ${error.message}`,
+          error.stack,
+        );
+        throw new InternalServerErrorException(error.message);
       }
-      this.projectReports[projectId].predictionsCount = totalPredictions;
 
-      const distribution: { [type: string]: number } = {
+      const predictions = predictionsData
+        ? predictionsData.map((item) =>
+            SupabaseMapper.fromSupabasePrediction(item),
+          )
+        : []; // Use mapper
+
+      const predictionsCount = predictions ? predictions.length : 0;
+
+      const predictionTypeDistribution: { [type: string]: number } = {
         'user-story': 0,
         bug: 0,
       };
-      if (predictionReviews) {
-        for (const review of predictionReviews) {
-          for (const prediction of review.predictions) {
-            if (distribution[prediction.type] !== undefined) {
-              distribution[prediction.type]++;
-            }
+      if (predictions) {
+        predictions.forEach((prediction) => {
+          if (predictionTypeDistribution[prediction.type] !== undefined) {
+            predictionTypeDistribution[prediction.type]++;
           }
-        }
+        });
       }
-      this.projectReports[projectId].predictionTypeDistribution = distribution;
 
-      this.projectReports[projectId].status = 'completed';
-      this.saveReportStatus(); // Save status change and data
-    } catch (error) {
-      console.error(
+      console.log(`Reports generated for project ${projectId}.`);
+      return { predictionsCount, predictionTypeDistribution };
+    } catch (error: any) {
+      this.logger.error(
         `Failed to generate reports for project ${projectId}:`,
-        error,
+        error.message,
+        error.stack,
       );
-      this.projectReports[projectId].status = 'failed';
-      this.saveReportStatus(); // Save status change
+      throw new InternalServerErrorException(
+        `Failed to generate reports for project ${projectId}: ${error.message}`,
+      );
     }
   }
 
-  getProjectReportsStatus(
+  // The getter methods will now just call the generation methods
+  async getOverallProjectCompletionRate(): Promise<number> {
+    const reports = await this.generateOverallReports();
+    return reports.completionRate;
+  }
+
+  async getOverallProjectStatusDistribution(): Promise<{
+    [status: string]: number;
+  }> {
+    const reports = await this.generateOverallReports();
+    return reports.statusDistribution;
+  }
+
+  async getPredictionsCountForProject(projectId: number): Promise<number> {
+    const reports = await this.generateProjectReports(projectId);
+    return reports.predictionsCount;
+  }
+
+  async getPredictionTypeDistributionForProject(
     projectId: number,
-  ): 'pending' | 'generating' | 'completed' | 'failed' | undefined {
-    return this.projectReports[projectId]?.status;
+  ): Promise<{ [type: string]: number }> {
+    const reports = await this.generateProjectReports(projectId);
+    return reports.predictionTypeDistribution;
   }
 
-  getPredictionsCountForProject(projectId: number): number | undefined {
-    if (this.projectReports[projectId]?.status === 'completed') {
-      return this.projectReports[projectId].predictionsCount;
-    }
-    return undefined;
-  }
-
-  getPredictionTypeDistributionForProject(
-    projectId: number,
-  ): { [type: string]: number } | undefined {
-    if (this.projectReports[projectId]?.status === 'completed') {
-      return this.projectReports[projectId].predictionTypeDistribution;
-    }
-    return undefined;
-  }
-
-  // TODO: Implement other report methods here
+  // Removed file-based status methods as reports are generated on the fly
+  // Removed TODO comment as the main reporting logic is now implemented
 }

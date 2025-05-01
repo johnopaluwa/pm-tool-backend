@@ -1,5 +1,6 @@
 export interface Prediction {
-  id: string;
+  id: string; // This will be the database UUID
+  aiGeneratedId: string; // This will store the AI-generated ID (e.g., "US-1")
   type: 'user-story' | 'bug'; // Added type to be more specific
   title: string;
   description: string;

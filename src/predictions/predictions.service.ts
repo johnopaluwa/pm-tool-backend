@@ -1,8 +1,15 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
+import { SupabaseClient } from '@supabase/supabase-js';
+import * as crypto from 'crypto'; // Import the crypto module
 import OpenAI from 'openai';
-import { Observable, of } from 'rxjs';
+import { SupabaseService } from '../supabase/supabase.service';
 
 import { Prediction } from '../models/prediction.model';
+import { SupabaseMapper } from '../supabase/supabase-mapper'; // Import the mapper
 
 import {
   PredictionReview,
@@ -13,10 +20,13 @@ import { ProjectsService } from '../projects/projects.service'; // Corrected imp
 @Injectable()
 export class PredictionsService {
   private openai: OpenAI;
+  private supabase: SupabaseClient;
+  private readonly logger = new Logger(PredictionsService.name);
 
   constructor(
     private readonly projectsService: ProjectsService, // Inject ProjectsService
     private readonly predictionReviewsService: PredictionReviewsService, // Inject PredictionReviewsService
+    private readonly supabaseService: SupabaseService, // Inject SupabaseService
   ) {
     const apiKey = process.env.OPENROUTER_API_KEY;
     const siteUrl = process.env.OPENROUTER_SITE_URL || ''; // Optional
@@ -36,6 +46,8 @@ export class PredictionsService {
         'X-Title': siteName,
       },
     });
+
+    this.supabase = this.supabaseService.getClient();
   }
 
   async generatePredictions(
@@ -48,19 +60,23 @@ export class PredictionsService {
     );
 
     // Update project status to 'predicting'
-    this.projectsService.updateProjectStatus(projectId, 'predicting');
+    // Ensure projectsService.updateProjectStatus is awaited if it's async
+    await this.projectsService.updateProjectStatus(projectId, 'predicting');
 
     // Fetch historical data
-    const allProjects = this.projectsService.findAll();
+    // Ensure projectsService.findAll is awaited if it's async
+    const allProjects = await this.projectsService.findAll();
     let allPredictionReviews: PredictionReview[] = [];
     try {
-      // Convert Observable to Promise and await
+      // Ensure predictionReviewsService.getPredictionReviews is awaited
       allPredictionReviews =
-        (await this.predictionReviewsService
-          .getPredictionReviews()
-          .toPromise()) || [];
-    } catch (error) {
-      console.error('Error fetching historical prediction reviews:', error);
+        (await this.predictionReviewsService.getPredictionReviews()) || [];
+    } catch (error: any) {
+      // Catch error as any to access message property
+      console.error(
+        'Error fetching historical prediction reviews:',
+        error.message,
+      );
       // Decide how to handle this error - either throw or proceed without historical data
       // For now, we'll log and proceed with empty historical data
     }
@@ -278,11 +294,10 @@ Ensure the JSON is valid and can be directly parsed. Generate at least 3 user st
           'Failed to parse predictions from AI response after cleaning.',
         );
       }
-      // Assign unique IDs if not provided by the API and ensure sourceProject is set
-      predictions = predictions.map((pred: any, index: number) => ({
-        id:
-          pred.id ||
-          `${projectData.projectName}-${pred.type}-${index}-${Date.now()}`, // Generate a unique ID if missing
+      // Assign unique database IDs (UUIDs) and map AI-generated IDs
+      predictions = predictions.map((pred: any) => ({
+        id: crypto.randomUUID(), // Generate a unique UUID for the database primary key
+        aiGeneratedId: pred.id || '', // Store the AI-generated ID in the new field
         type: pred.type, // REQUIRED
         title: pred.title || '', // REQUIRED: Provide default empty string
         description: pred.description || '', // REQUIRED: Provide default empty string
@@ -296,56 +311,108 @@ Ensure the JSON is valid and can be directly parsed. Generate at least 3 user st
         acceptanceCriteria: pred.acceptanceCriteria || [], // REQUIRED: Provide default empty array
         dependencies: pred.dependencies || [], // REQUIRED: Provide default empty array
         assumptions: pred.assumptions || [], // REQUIRED: Provide default empty array
-        edgeCases: pred.edgeCases || [], // REQUIRED: Provide default empty array
-        nonFunctionalRequirements: pred.nonFunctionalRequirements || '', // REQUIRED: Provide default empty string
-        visuals: pred.visuals || [], // REQUIRED: Provide default empty array
-        dataRequirements: pred.dataRequirements || '', // REQUIRED: Provide default empty string
-        impact: pred.impact || '', // REQUIRED: Provide default empty string
+        edgeCases: pred.edgeCases || [], // REQUIRED: List of edge cases
+        nonFunctionalRequirements: pred.nonFunctionalRequirements || '', // REQUIRED: Text field for non-functional requirements
+        visuals: pred.visuals || [], // REQUIRED: List of URLs or references to visuals/mockups
+        dataRequirements: pred.dataRequirements || '', // REQUIRED: Text field for data requirements
+        impact: pred.impact || '', // REQUIRED: Text field for impact
         priority: pred.priority || 'Low', // REQUIRED: Provide default 'Low'
 
         // Fields for Bug Details (include only if type is 'bug')
-        stepsToReproduce: pred.stepsToReproduce || [], // REQUIRED: Provide default empty array
+        stepsToReproduce: pred.stepsToReproduce || [], // REQUIRED: List of steps to reproduce
         actualResult: pred.actualResult || '', // REQUIRED: Provide default empty string
         expectedResult: pred.expectedResult || '', // REQUIRED: Provide default empty string
-        environment: pred.environment || '', // REQUIRED: Provide default empty string
-        userAccountDetails: pred.userAccountDetails || '', // REQUIRED: Provide default empty string
-        screenshotsVideos: pred.screenshotsVideos || [], // REQUIRED: Provide default empty array
+        environment: pred.environment || '', // REQUIRED: Text field for environment details
+        userAccountDetails: pred.userAccountDetails || '', // REQUIRED: Text field for user/account details (non-sensitive)
+        screenshotsVideos: pred.screenshotsVideos || [], // REQUIRED: List of URLs or references to screenshots/videos
         errorMessagesLogs: pred.errorMessagesLogs || '', // REQUIRED: Provide default empty string
         frequencyOfOccurrence: pred.frequencyOfOccurrence || 'Consistent', // REQUIRED: Provide default 'Consistent'
         severity: pred.severity || 'Minor', // REQUIRED: Provide default 'Minor'
-        workaround: pred.workaround || '', // REQUIRED: Provide default empty string
-        relatedIssues: pred.relatedIssues || [], // REQUIRED: Provide default empty array
+        workaround: pred.workaround || '', // REQUIRED: Text field for workaround
+        relatedIssues: pred.relatedIssues || [], // REQUIRED: List of related issue IDs
       }));
 
-      // Update project status to 'completed' after successful generation
-      this.projectsService.updateProjectStatus(projectId, 'completed');
+      // Save generated predictions to Supabase
+      const predictionsToInsert = predictions.map((pred) =>
+        SupabaseMapper.toSupabasePrediction(pred),
+      ); // Use mapper here
 
-      return predictions;
-    } catch (error) {
-      console.error('Error calling OpenRouter API:', error);
+      const { data: insertedPredictions, error: insertError } =
+        await this.supabase
+          .from('predictions')
+          .insert(predictionsToInsert)
+          .select();
+
+      if (insertError) {
+        this.logger.error(
+          `Error inserting predictions into Supabase: ${insertError.message}`,
+          insertError.stack,
+        );
+        // Decide how to handle this error - throw or return empty array
+        throw new InternalServerErrorException(
+          `Failed to save predictions: ${insertError.message}`,
+        );
+      }
+
+      // Map the inserted data back to Prediction model before returning
+      const mappedInsertedPredictions = insertedPredictions.map((data) =>
+        SupabaseMapper.fromSupabasePrediction(data),
+      );
+
+      // Update project status to 'completed' after successful generation and saving
+      // Ensure projectsService.updateProjectStatus is awaited if it's async
+      await this.projectsService.updateProjectStatus(projectId, 'completed');
+
+      return mappedInsertedPredictions; // Return mapped data
+    } catch (error: any) {
+      // Catch error as any to access message property
+      this.logger.error(
+        'Error generating or saving predictions:',
+        error.message,
+        error.stack,
+      );
       // Consider updating status to an error state if needed
-      this.projectsService.updateProjectStatus(projectId, 'new'); // Revert to 'new' on error
+      // Ensure projectsService.updateProjectStatus is awaited if it's async
+      await this.projectsService.updateProjectStatus(projectId, 'new'); // Revert to 'new' on error
       throw new InternalServerErrorException(
-        'Failed to generate predictions using AI.',
+        `Failed to generate or save predictions: ${error.message}`,
       );
     }
   }
 
   // Keep existing methods for feedback and history
-  sendFeedback(feedbackData: any): Observable<any> {
-    // In a real application, this would send feedback to the prediction model.
+  async sendFeedback(feedbackData: any): Promise<any> {
+    // In a real application, this would send feedback to the prediction model or save to DB.
     console.log('Feedback received:', feedbackData);
-    return of({ success: true });
+    // If you want to save feedback to Supabase:
+    // const { data, error } = await this.supabase.from('feedback').insert([feedbackData]);
+    // if (error) {
+    //   console.error('Error saving feedback:', error.message);
+    //   throw new InternalServerErrorException(`Failed to save feedback: ${error.message}`);
+    // }
+    return { success: true };
   }
 
-  getPredictionHistory(projectId: string): Observable<Prediction[]> {
-    // This method currently uses mock data. In a real application, you would fetch from a database.
-    // For now, we'll keep the mock data filtering.
+  async getPredictionHistory(projectId: number): Promise<Prediction[]> {
     console.log(`Fetching prediction history for project ID: ${projectId}`);
-    // Note: The mockPredictions array is static. To see generated predictions persisted,
-    // you would need to save them to a database and fetch from there.
-    // For demonstration, we'll return an empty array or filter the static mock data if applicable.
-    // Since generated predictions are not added to mockPredictions, this will likely return empty.
-    return of([]); // Return empty array as generated predictions are not stored in mockPredictions
+    const { data, error } = await this.supabase
+      .from('predictions')
+      .select('*')
+      .eq('project_id', projectId); // Fetch predictions linked to the project ID
+
+    if (error) {
+      this.logger.error(
+        `Error fetching prediction history from Supabase: ${error.message}`,
+        error.stack,
+      );
+      throw new InternalServerErrorException(
+        `Failed to fetch prediction history: ${error.message}`,
+      );
+    }
+
+    // Map the fetched data using the SupabaseMapper
+    return data
+      ? data.map((item) => SupabaseMapper.fromSupabasePrediction(item))
+      : [];
   }
 }

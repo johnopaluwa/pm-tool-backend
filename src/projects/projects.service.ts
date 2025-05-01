@@ -1,4 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
+import { SupabaseClient } from '@supabase/supabase-js';
+import { SupabaseMapper } from '../supabase/supabase-mapper'; // Import the mapper
+import { SupabaseService } from '../supabase/supabase.service';
 
 export interface Project {
   id: number;
@@ -18,107 +25,126 @@ export interface Project {
 
 @Injectable()
 export class ProjectsService {
-  private mockProjects: Project[] = [
-    {
-      id: 1,
-      name: 'Project Alpha',
-      client: 'Client A',
-      status: 'completed', // Changed to 'predicting' as it has prediction reviews
-      reportGenerated: true, // Set reportGenerated to true for Alpha
-      description: 'This is a description for Project Alpha.',
-      projectType: 'Web App',
-      clientIndustry: 'Finance',
-      techStack: ['React', 'Node', 'AWS'],
-      teamSize: '4-6',
-      duration: '3-6 months',
-      keywords: 'User auth, payment gateway',
-      businessSpecification:
-        'Detailed requirements for user authentication and payment processing.',
-    },
-    {
-      id: 2,
-      name: 'Project Beta',
-      client: 'Client B',
-      status: 'completed', // Changed to 'predicting' as it has prediction reviews
-      reportGenerated: true, // Set reportGenerated to true for Beta
-      description: 'This is a description for Project Beta.',
-      projectType: 'Mobile App',
-      clientIndustry: 'Retail',
-      techStack: ['Angular', 'Azure'],
-      teamSize: '1-3',
-      duration: '<1 month',
-      keywords: 'Push notifications, user profiles',
-      businessSpecification:
-        'Specifications for mobile app features including push notifications and user profile management.',
-    },
-    {
-      id: 3,
-      name: 'Project Gamma',
-      client: 'Client C',
-      status: 'new', // Changed to 'new' as it has no prediction reviews
-      reportGenerated: false, // Initialize reportGenerated
-      description: 'This is a description for Project Gamma.',
-      projectType: 'API',
-      clientIndustry: 'Healthcare',
-      techStack: ['Python', 'AWS'],
-      teamSize: '7-10',
-      duration: '6+ months',
-      keywords: 'Data integration, security',
-      businessSpecification:
-        'API requirements focusing on secure data integration and handling sensitive healthcare information.',
-    },
-  ];
+  private supabase: SupabaseClient;
+  private readonly logger = new Logger(ProjectsService.name);
 
-  findAll(): Project[] {
-    return this.mockProjects;
+  constructor(private readonly supabaseService: SupabaseService) {
+    this.supabase = this.supabaseService.getClient();
   }
 
-  getProjectById(id: number): Project | undefined {
-    return this.mockProjects.find((project) => project.id === id);
+  async findAll(): Promise<Project[]> {
+    const { data, error } = await this.supabase.from('projects').select('*');
+    if (error) {
+      throw new InternalServerErrorException(error.message);
+    }
+    return data
+      ? data.map((item) => SupabaseMapper.fromSupabaseProject(item))
+      : []; // Use mapper
   }
 
-  addProject(
+  async getProjectById(id: number): Promise<Project | undefined> {
+    const { data, error } = await this.supabase
+      .from('projects')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (error && error.code !== 'PGRST116') {
+      // PGRST116 means no rows found
+      throw new InternalServerErrorException(error.message);
+    }
+    return data ? SupabaseMapper.fromSupabaseProject(data) : undefined; // Use mapper
+  }
+
+  async addProject(
     project: Omit<Project, 'id' | 'status' | 'name' | 'client'> & {
       projectName: string;
       clientName: string;
     },
-  ): number {
-    const newId =
-      this.mockProjects.length > 0
-        ? Math.max(...this.mockProjects.map((p) => p.id)) + 1
-        : 1;
-    const newProject: Project = {
-      ...project,
-      id: newId,
+  ): Promise<number> {
+    const newProject = SupabaseMapper.toSupabaseProject({
+      // Use mapper
       name: project.projectName,
       client: project.clientName,
       status: 'new', // New projects start with status 'new'
       reportGenerated: false, // New projects have reportGenerated as false
-    };
-    this.mockProjects.push(newProject);
-    console.log('New project added:', newProject);
-    console.log('All projects:', this.mockProjects);
-    return newId;
+      description: project.description,
+      projectType: project.projectType,
+      clientIndustry: project.clientIndustry,
+      techStack: project.techStack,
+      teamSize: project.teamSize,
+      duration: project.duration,
+      keywords: project.keywords,
+      businessSpecification: project.businessSpecification,
+    });
+
+    const { data, error } = await this.supabase
+      .from('projects')
+      .insert([newProject])
+      .select('id');
+
+    if (error) {
+      this.logger.error(
+        `Error inserting project into Supabase:`,
+        error.message,
+        error,
+      ); // Log the entire error object
+      throw new InternalServerErrorException(
+        `Failed to create project: ${error.message || 'Unknown error'}`,
+      );
+    }
+
+    if (!data || data.length === 0) {
+      this.logger.error('Failed to retrieve new project ID after insertion.');
+      throw new InternalServerErrorException(
+        'Failed to retrieve new project ID after insertion.',
+      );
+    }
+
+    console.log('New project added:', data[0].id);
+    return data[0].id;
   }
-  updateProjectStatus(
+
+  async updateProjectStatus(
     id: number,
     status: 'new' | 'predicting' | 'completed',
-  ): Project | undefined {
-    const project = this.mockProjects.find((p) => p.id === id);
-    if (project) {
-      project.status = status;
+  ): Promise<Project | undefined> {
+    const { data, error } = await this.supabase
+      .from('projects')
+      .update({ status: status })
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      // PGRST116 means no rows found
+      this.logger.error(`Error updating project status in Supabase:`, error); // Log the entire error object
+      throw new InternalServerErrorException(error.message || 'Unknown error');
+    }
+
+    if (data) {
       console.log(`Project ${id} status updated to ${status}`);
-      return project;
+      return SupabaseMapper.fromSupabaseProject(data); // Use mapper
     }
     return undefined;
   }
 
-  markReportGenerated(id: number): Project | undefined {
-    const project = this.mockProjects.find((p) => p.id === id);
-    if (project) {
-      project.reportGenerated = true;
+  async markReportGenerated(id: number): Promise<Project | undefined> {
+    const { data, error } = await this.supabase
+      .from('projects')
+      .update({ reportGenerated: true })
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      // PGRST116 means no rows found
+      this.logger.error(`Error marking report generated in Supabase:`, error); // Log the entire error object
+      throw new InternalServerErrorException(error.message || 'Unknown error');
+    }
+
+    if (data) {
       console.log(`Project ${id} reportGenerated status updated to true`);
-      return project;
+      return SupabaseMapper.fromSupabaseProject(data); // Use mapper
     }
     return undefined;
   }

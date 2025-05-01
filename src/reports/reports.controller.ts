@@ -1,10 +1,4 @@
-import {
-  Controller,
-  Get,
-  NotFoundException,
-  Param,
-  Post,
-} from '@nestjs/common';
+import { Controller, Get, Param, Post } from '@nestjs/common';
 import { ReportsService } from './reports.service';
 
 @Controller('reports')
@@ -12,85 +6,63 @@ export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
 
   @Post('generate/overall')
+  @Post('generate/overall')
   async generateOverallReports(): Promise<{ status: string }> {
-    await this.reportsService.generateOverallReports();
-    return { status: 'Report generation started' };
+    // Reports are now generated on the fly when requested via GET endpoints
+    // This endpoint can be kept to trigger a regeneration if needed, but the GET endpoints are the primary way to get reports
+    // For now, we'll just return a success status indicating the capability exists
+    return {
+      status:
+        'Overall report generation triggered (reports are generated on demand via GET endpoints)',
+    };
   }
 
-  @Get('status/overall')
-  getOverallReportsStatus(): { status: string } {
-    return { status: this.reportsService.getOverallReportsStatus() };
-  }
+  // Removed getOverallReportsStatus as reports are generated on the fly
 
   @Get('overall/completion-rate')
-  getOverallProjectCompletionRate(): number {
-    const completionRate =
-      this.reportsService.getOverallProjectCompletionRate();
-    if (completionRate === undefined) {
-      throw new NotFoundException(
-        'Overall completion rate report not generated yet.',
-      );
-    }
-    return completionRate;
+  async getOverallProjectCompletionRate(): Promise<number> {
+    const reports = await this.reportsService.generateOverallReports();
+    return reports.completionRate;
   }
 
   @Get('overall/status-distribution')
-  getOverallProjectStatusDistribution(): { [status: string]: number } {
-    const statusDistribution =
-      this.reportsService.getOverallProjectStatusDistribution();
-    if (statusDistribution === undefined) {
-      throw new NotFoundException(
-        'Overall status distribution report not generated yet.',
-      );
-    }
-    return statusDistribution;
+  async getOverallProjectStatusDistribution(): Promise<{
+    [status: string]: number;
+  }> {
+    const reports = await this.reportsService.generateOverallReports();
+    return reports.statusDistribution;
   }
 
   @Post('generate/projects/:projectId')
   async generateProjectReports(
     @Param('projectId') projectId: string,
   ): Promise<{ status: string }> {
-    await this.reportsService.generateProjectReports(+projectId);
-    return { status: `Report generation started for project ${projectId}` };
+    // Reports are now generated on the fly when requested via GET endpoints
+    // This endpoint can be kept to trigger a regeneration if needed, but the GET endpoints are the primary way to get reports
+    // For now, we'll just return a success status indicating the capability exists
+    return {
+      status: `Project report generation triggered for project ${projectId} (reports are generated on demand via GET endpoints)`,
+    };
   }
 
-  @Get('status/projects/:projectId')
-  getProjectReportsStatus(@Param('projectId') projectId: string): {
-    status: string;
-  } {
-    const status = this.reportsService.getProjectReportsStatus(+projectId);
-    if (status === undefined) {
-      throw new NotFoundException(
-        `Reports for project ${projectId} not found.`,
-      );
-    }
-    return { status };
-  }
+  // Removed getProjectReportsStatus as reports are generated on the fly
 
   @Get('projects/:projectId/predictions-count')
-  getPredictionsCountForProject(@Param('projectId') projectId: string): number {
-    const predictionsCount =
-      this.reportsService.getPredictionsCountForProject(+projectId);
-    if (predictionsCount === undefined) {
-      throw new NotFoundException(
-        `Predictions count report for project ${projectId} not generated yet.`,
-      );
-    }
-    return predictionsCount;
+  async getPredictionsCountForProject(
+    @Param('projectId') projectId: string,
+  ): Promise<number> {
+    const reports =
+      await this.reportsService.generateProjectReports(+projectId);
+    return reports.predictionsCount;
   }
 
   @Get('projects/:projectId/prediction-type-distribution')
-  getPredictionTypeDistributionForProject(
+  async getPredictionTypeDistributionForProject(
     @Param('projectId') projectId: string,
-  ): { [type: string]: number } {
-    const distribution =
-      this.reportsService.getPredictionTypeDistributionForProject(+projectId);
-    if (distribution === undefined) {
-      throw new NotFoundException(
-        `Prediction type distribution report for project ${projectId} not generated yet.`,
-      );
-    }
-    return distribution;
+  ): Promise<{ [type: string]: number }> {
+    const reports =
+      await this.reportsService.generateProjectReports(+projectId);
+    return reports.predictionTypeDistribution;
   }
 
   // TODO: Implement other report endpoints here

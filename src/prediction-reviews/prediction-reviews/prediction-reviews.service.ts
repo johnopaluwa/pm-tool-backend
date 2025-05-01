@@ -1,195 +1,226 @@
-import { Injectable } from '@nestjs/common';
-import { Observable, of } from 'rxjs'; // Although NestJS services typically return Promises or Observables, for a simple mock backend, returning data directly is fine. We'll keep the Observable return type for consistency with the frontend mock service for now, but will likely change this to Promises later.
-
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
+import { SupabaseClient } from '@supabase/supabase-js';
 import { Prediction } from '../../models/prediction.model';
+import { SupabaseMapper } from '../../supabase/supabase-mapper'; // Import the mapper
+import { SupabaseService } from '../../supabase/supabase.service';
 
 export interface PredictionReview {
-  id: string;
+  id: string; // Supabase will generate UUID
   projectId: number; // Link to the project
   projectName: string;
   clientName?: string;
-  generatedAt: Date;
-  predictions: Prediction[];
+  generatedAt: string; // Store as ISO string
+  predictions: Prediction[]; // This will not be stored directly, but fetched via relationship
 }
 
 @Injectable()
 export class PredictionReviewsService {
-  private mockPredictionReviews: PredictionReview[] = [
-    {
-      id: 'review-1',
-      projectId: 1,
-      projectName: 'Project Alpha',
-      clientName: 'Client A',
-      generatedAt: new Date('2023-10-26T10:00:00Z'),
-      predictions: [
-        {
-          id: 'us-1',
-          type: 'user-story', // Updated type
-          title: 'As a user, I want to reset my password',
-          description: 'Allow users to reset their password via email link.',
-          similarityScore: 85,
-          frequency: 90,
-          sourceProject: 'Project Alpha',
-          status: 'pending',
-          // Added fields for User Story
-          acceptanceCriteria: [
-            'User receives an email with a reset link',
-            'Link expires after 24 hours',
-            'User can set a new password via the link',
-          ],
-          dependencies: ['Email service integration'],
-          assumptions: ['User has access to their registered email'],
-          edgeCases: ['User enters an invalid email format'],
-          nonFunctionalRequirements:
-            'The password reset process should be secure and user-friendly.',
-          visuals: ['link/to/mockup.png'],
-          dataRequirements: 'Store hashed passwords and user email addresses.',
-          impact:
-            'Users cannot reset their password if forgotten, leading to support requests.',
-          priority: 'High',
-          estimatedTime: 4, // Example estimated time in hours
-          stepsToReproduce: [
-            'Navigate to login page',
-            'Click "Forgot Password"',
-            'Enter email and submit',
-          ],
-          actualResult: 'Password reset email is not sent.',
-          expectedResult: 'Password reset email is sent with a unique link.',
-          environment: 'Production',
-          userAccountDetails: 'Any registered user account.',
-          screenshotsVideos: ['link/to/screenshot1.png', 'link/to/video.mp4'],
-          errorMessagesLogs: 'Error: Email service failed to send.',
-          frequencyOfOccurrence: 'Consistent',
-          severity: 'Major',
-          workaround: 'Manual password reset by admin.',
-          relatedIssues: ['issue-101', 'issue-105'],
-        },
-        {
-          id: 'bug-2',
-          type: 'bug', // Updated type
-          title: 'Cross-browser compatibility issues',
-          description: 'Fix layout issues in Safari and IE11.',
-          similarityScore: 70,
-          frequency: 55,
-          sourceProject: 'Project Alpha',
-          status: 'pending',
-          // Added fields for Bug
-          acceptanceCriteria: ['Layout is consistent across Safari and IE11'],
-          dependencies: ['Updated CSS framework'],
-          assumptions: ['Browser versions are within support policy'],
-          edgeCases: ['Specific complex layouts might still have minor issues'],
-          nonFunctionalRequirements:
-            'Application must render correctly on all supported browsers.',
-          visuals: [
-            'link/to/safari_screenshot.png',
-            'link/to/ie11_screenshot.png',
-          ],
-          dataRequirements: '',
-          impact: 'Users on affected browsers have a poor experience.',
-          priority: 'Critical',
-          estimatedTime: 8, // Example estimated time in hours
-          stepsToReproduce: [
-            'Open application in Safari or IE11',
-            'Navigate to the dashboard page',
-            'Observe layout discrepancies',
-          ],
-          actualResult: 'Layout is broken in Safari and IE11.',
-          expectedResult:
-            'Layout should be consistent across all supported browsers.',
-          environment: 'Safari 15, IE11 on Windows 10',
-          userAccountDetails: 'Any user.',
-          screenshotsVideos: [],
-          errorMessagesLogs: '',
-          frequencyOfOccurrence: 'Consistent',
-          severity: 'Major',
-          workaround: 'Use a different browser.',
-          relatedIssues: ['css-layout-bug-101', 'rendering-issue-205'],
-        },
-      ],
+  private supabase: SupabaseClient;
+  private readonly logger = new Logger(PredictionReviewsService.name);
+
+  constructor(private readonly supabaseService: SupabaseService) {
+    this.supabase = this.supabaseService.getClient();
+  }
+
+  async addPredictionReview(
+    review: Omit<PredictionReview, 'id' | 'generatedAt' | 'predictions'> & {
+      predictions: Prediction[];
     },
-    {
-      id: 'review-2',
-      projectId: 2,
-      projectName: 'Project Beta',
-      clientName: 'Client B',
-      generatedAt: new Date('2023-11-15T14:30:00Z'),
-      predictions: [
+  ): Promise<PredictionReview> {
+    const { predictions, ...reviewData } = review;
+
+    // Insert the prediction review first
+    const { data: reviewResult, error: reviewError } = await this.supabase
+      .from('prediction_reviews')
+      .insert([
         {
-          id: 'us-2',
-          type: 'user-story', // Updated type
-          title: 'As an admin, I want to manage users',
-          description: 'Admin panel for creating, editing, and deleting users.',
-          similarityScore: 80,
-          frequency: 75,
-          sourceProject: 'Project Beta',
-          status: 'pending',
-          // Added some fields for User Story
-          acceptanceCriteria: [
-            'Admin can view a list of all users',
-            'Admin can add a new user',
-            'Admin can edit existing user details',
-            'Admin can delete a user',
-          ],
-          dependencies: ['Backend user API'],
-          assumptions: ['Admin has necessary permissions'],
-          edgeCases: ['Handling large number of users'],
-          nonFunctionalRequirements:
-            'User management should be fast and secure.',
-          visuals: ['link/to/admin_panel_mockup.png'],
-          dataRequirements: 'Access to user database.',
-          impact:
-            'Admins cannot manage users, affecting system administration.',
-          priority: 'High',
-          estimatedTime: 16, // Example estimated time in hours
-          stepsToReproduce: ['Navigate to admin panel', 'Click on "Users"'],
-          actualResult: 'User list is empty or shows an error.',
-          expectedResult: 'A list of users is displayed.',
-          environment: 'Staging',
-          userAccountDetails: 'Admin user account.',
-          screenshotsVideos: [],
-          errorMessagesLogs: 'Error fetching users: [log details]',
-          frequencyOfOccurrence: 'Intermittent',
-          severity: 'Major',
-          workaround:
-            'Manage users directly in the database (not recommended).',
-          relatedIssues: ['backend-api-error-302'],
+          ...reviewData,
+          clientname: reviewData.clientName,
+          generatedAt: new Date().toISOString(),
         },
-      ],
-    },
-  ];
+      ])
+      .select()
+      .single();
 
-  addPredictionReview(
-    review: Omit<PredictionReview, 'id' | 'generatedAt'>,
-  ): Observable<PredictionReview> {
-    const newId = `review-${this.mockPredictionReviews.length + 1}`; // Simple ID generation
-    const newReview: PredictionReview = {
-      ...review,
-      id: newId,
-      generatedAt: new Date(),
-    };
-    this.mockPredictionReviews.push(newReview);
-    console.log('New prediction review added:', newReview);
-    console.log('All prediction reviews:', this.mockPredictionReviews);
-    return of(newReview);
+    if (reviewError) {
+      this.logger.error(
+        `Error inserting prediction review into Supabase: ${reviewError.message}`,
+        reviewError.stack,
+      );
+      throw new InternalServerErrorException(reviewError.message);
+    }
+
+    // Insert the associated predictions using the mapper
+    const predictionsToInsert = predictions.map((pred) => ({
+      ...SupabaseMapper.toSupabasePrediction(pred),
+      review_id: reviewResult.id, // Link prediction to the new review
+      // Ensure project_id is included if needed, though it might be handled elsewhere
+      // project_id: review.projectId,
+    }));
+
+    const { data: predictionsResult, error: predictionsError } =
+      await this.supabase
+        .from('predictions')
+        .insert(predictionsToInsert)
+        .select();
+
+    if (predictionsError) {
+      // Consider rolling back the review insertion if prediction insertion fails
+      this.logger.error(
+        `Error inserting predictions into Supabase: ${predictionsError.message}`,
+        predictionsError.stack,
+      );
+      // For now, we'll just throw the error
+      throw new InternalServerErrorException(predictionsError.message);
+    }
+
+    console.log('New prediction review and predictions added.');
+    // Map the inserted predictions back to the backend model before returning
+    const mappedPredictions = predictionsResult
+      ? predictionsResult.map((item) =>
+          SupabaseMapper.fromSupabasePrediction(item),
+        )
+      : [];
+    return {
+      ...reviewResult,
+      predictions: mappedPredictions,
+    } as PredictionReview;
   }
 
-  getPredictionReviews(): Observable<PredictionReview[]> {
-    return of(this.mockPredictionReviews);
-  }
+  async getPredictionReviews(): Promise<PredictionReview[]> {
+    const { data: reviews, error: reviewsError } = await this.supabase
+      .from('prediction_reviews')
+      .select('*');
 
-  getPredictionReviewById(
-    id: string,
-  ): Observable<PredictionReview | undefined> {
-    return of(this.mockPredictionReviews.find((review) => review.id === id));
-  }
+    if (reviewsError) {
+      this.logger.error(
+        `Error fetching prediction reviews from Supabase: ${reviewsError.message}`,
+        reviewsError.stack,
+      );
+      throw new InternalServerErrorException(reviewsError.message);
+    }
 
-  getPredictionReviewsByProjectId(
-    projectId: number,
-  ): Observable<PredictionReview[]> {
-    return of(
-      this.mockPredictionReviews.filter(
-        (review) => review.projectId === projectId,
-      ),
+    // Fetch predictions for each review and map them
+    const reviewsWithPredictions = await Promise.all(
+      reviews.map(async (review) => {
+        const { data: predictions, error: predictionsError } =
+          await this.supabase
+            .from('predictions')
+            .select('*')
+            .eq('review_id', review.id);
+
+        if (predictionsError) {
+          this.logger.error(
+            `Error fetching predictions for review ${review.id} from Supabase: ${predictionsError.message}`,
+            predictionsError.stack,
+          );
+          // Decide how to handle this error - either skip the review or return it without predictions
+          return { ...review, predictions: [] }; // Return review with empty predictions array
+        }
+
+        // Map the fetched predictions
+        const mappedPredictions = predictions
+          ? predictions.map((item) =>
+              SupabaseMapper.fromSupabasePrediction(item),
+            )
+          : [];
+        return { ...review, predictions: mappedPredictions };
+      }),
     );
+
+    return reviewsWithPredictions as PredictionReview[];
+  }
+
+  async getPredictionReviewById(
+    id: string,
+  ): Promise<PredictionReview | undefined> {
+    const { data: review, error: reviewError } = await this.supabase
+      .from('prediction_reviews')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (reviewError && reviewError.code !== 'PGRST116') {
+      // PGRST116 means no rows found
+      this.logger.error(
+        `Error fetching prediction review by ID ${id} from Supabase: ${reviewError.message}`,
+        reviewError.stack,
+      );
+      throw new InternalServerErrorException(reviewError.message);
+    }
+
+    if (!review) {
+      return undefined;
+    }
+
+    // Fetch associated predictions and map them
+    const { data: predictions, error: predictionsError } = await this.supabase
+      .from('predictions')
+      .select('*')
+      .eq('review_id', review.id);
+
+    if (predictionsError) {
+      this.logger.error(
+        `Error fetching predictions for review ${review.id} from Supabase: ${predictionsError.message}`,
+        predictionsError.stack,
+      );
+      // Decide how to handle this error
+      return { ...review, predictions: [] }; // Return review with empty predictions array
+    }
+
+    // Map the fetched predictions
+    const mappedPredictions = predictions
+      ? predictions.map((item) => SupabaseMapper.fromSupabasePrediction(item))
+      : [];
+
+    return {
+      ...review,
+      predictions: mappedPredictions,
+    } as PredictionReview;
+  }
+
+  async getPredictionReviewsByProjectId(
+    projectId: number,
+  ): Promise<PredictionReview[]> {
+    const { data: reviews, error: reviewsError } = await this.supabase
+      .from('prediction_reviews')
+      .select('*')
+      .eq('projectId', projectId);
+
+    if (reviewsError) {
+      this.logger.error(
+        `Error fetching prediction reviews by project ID ${projectId} from Supabase: ${reviewsError.message}`,
+        reviewsError.stack,
+      );
+      throw new InternalServerErrorException(reviewsError.message);
+    }
+
+    // Fetch predictions for each review
+    const reviewsWithPredictions = await Promise.all(
+      reviews.map(async (review) => {
+        const { data: predictions, error: predictionsError } =
+          await this.supabase
+            .from('predictions')
+            .select('*')
+            .eq('review_id', review.id);
+
+        if (predictionsError) {
+          this.logger.error(
+            `Error fetching predictions for review ${review.id} from Supabase: ${predictionsError.message}`,
+            predictionsError.stack,
+          );
+          // Decide how to handle this error
+          return { ...review, predictions: [] }; // Return review with empty predictions array
+        }
+
+        return { ...review, predictions: predictions as Prediction[] };
+      }),
+    );
+
+    return reviewsWithPredictions as PredictionReview[];
   }
 }

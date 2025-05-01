@@ -1,5 +1,4 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
-import { Observable } from 'rxjs';
 import { CreatePredictionReviewDto } from '../dto/create-prediction-review.dto';
 import {
   PredictionReview,
@@ -13,30 +12,33 @@ export class PredictionReviewsController {
   ) {}
 
   @Get()
-  findAll(): Observable<PredictionReview[]> {
-    return this.predictionReviewsService.getPredictionReviews();
+  @Get()
+  async findAll(): Promise<PredictionReview[]> {
+    return await this.predictionReviewsService.getPredictionReviews();
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string): Observable<PredictionReview | undefined> {
-    return this.predictionReviewsService.getPredictionReviewById(id);
+  async findOne(
+    @Param('id') id: string,
+  ): Promise<PredictionReview | undefined> {
+    return await this.predictionReviewsService.getPredictionReviewById(id);
   }
 
   @Get('project/:projectId')
-  findByProjectId(
+  async findByProjectId(
     @Param('projectId') projectId: string,
-  ): Observable<PredictionReview[]> {
-    return this.predictionReviewsService.getPredictionReviewsByProjectId(
+  ): Promise<PredictionReview[]> {
+    return await this.predictionReviewsService.getPredictionReviewsByProjectId(
       +projectId,
     );
   }
 
   @Post()
-  create(
+  async create(
     @Body()
     createPredictionReviewDto: CreatePredictionReviewDto,
-  ): Observable<PredictionReview> {
-    return this.predictionReviewsService.addPredictionReview(
+  ): Promise<PredictionReview> {
+    return await this.predictionReviewsService.addPredictionReview(
       createPredictionReviewDto,
     );
   }

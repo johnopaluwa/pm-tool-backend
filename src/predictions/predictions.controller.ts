@@ -1,5 +1,4 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
-import { Observable } from 'rxjs';
 import { Prediction } from '../models/prediction.model'; // Corrected import path
 import { PredictionsService } from './predictions.service';
 
@@ -17,14 +16,15 @@ export class PredictionsController {
   }
 
   @Post('feedback')
-  sendFeedback(@Body() feedbackData: any): Observable<any> {
+  @Post('feedback')
+  async sendFeedback(@Body() feedbackData: any): Promise<any> {
     return this.predictionsService.sendFeedback(feedbackData);
   }
 
   @Get('history/:projectId')
-  getPredictionHistory(
+  async getPredictionHistory(
     @Param('projectId') projectId: string,
-  ): Observable<Prediction[]> {
-    return this.predictionsService.getPredictionHistory(projectId);
+  ): Promise<Prediction[]> {
+    return this.predictionsService.getPredictionHistory(+projectId); // Convert projectId to number
   }
 }
