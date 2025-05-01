@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { PredictionReviewsModule } from './prediction-reviews/prediction-reviews.module';
 import { PredictionsModule } from './predictions/predictions.module';
 import { ProjectsModule } from './projects/projects.module'; // Corrected import path
+import { ReportsModule } from './reports/reports.module'; // Import ReportsModule
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { ProjectsModule } from './projects/projects.module'; // Corrected import
     ProjectsModule,
     PredictionReviewsModule,
     PredictionsModule,
+    ReportsModule, // Add ReportsModule here
   ],
   controllers: [AppController],
   providers: [AppService],

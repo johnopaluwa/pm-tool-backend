@@ -8,5 +8,6 @@ import { PredictionsService } from './predictions.service';
   imports: [ProjectsModule, PredictionReviewsModule], // Import the necessary modules
   controllers: [PredictionsController],
   providers: [PredictionsService],
+  exports: [PredictionsService], // Export PredictionsService
 })
 export class PredictionsModule {}
