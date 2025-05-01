@@ -31,4 +31,9 @@ export class ProjectsController {
       updateProjectStatusDto.status,
     );
   }
+
+  @Patch(':id/mark-report-generated')
+  markReportGenerated(@Param('id') id: string) {
+    return this.projectsService.markReportGenerated(+id); // Convert id to number
+  }
 }

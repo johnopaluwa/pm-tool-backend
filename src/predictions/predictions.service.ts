@@ -141,7 +141,9 @@ ${predictionsForProject
     }
 
     // Formulate the prompt including historical data
-    const prompt = `Analyze the following historical project data and their predicted user stories/bugs to generate a list of potential user stories and bugs for a new software project with the characteristics provided below. Identify common patterns, recurring issues, and relevant features from the historical data that might apply to the new project.
+    const prompt = `YOUR RESPONSE MUST BE A VALID JSON ARRAY. DO NOT INCLUDE ANY INTRODUCTORY OR CONCLUDING TEXT, EXPLANATIONS, OR MARKDOWN FORMATTING (like \`\`\`json\`). PROVIDE ONLY THE JSON ARRAY.
+
+Analyze the following historical project data and their predicted user stories/bugs to generate a list of potential user stories and bugs for a new software project with the characteristics provided below. Identify common patterns, recurring issues, and relevant features from the historical data that might apply to the new project.
 
 Historical Project Data:
 ${historicalData || 'No historical data available.'}
@@ -199,7 +201,7 @@ Provide the output as a JSON array of objects, where each object has the followi
   "relatedIssues": string[] // REQUIRED: List of related issue IDs
 }
 
-Ensure the JSON is valid and can be directly parsed. Do not include any introductory or concluding text outside the JSON array. Generate at least 3 user stories and 2 bugs that are relevant to the new project based on its characteristics and the provided historical data.`;
+Ensure the JSON is valid and can be directly parsed. Generate at least 3 user stories and 2 bugs that are relevant to the new project based on its characteristics and the provided historical data.`;
 
     try {
       const completion = await this.openai.chat.completions.create({
@@ -241,18 +243,33 @@ Ensure the JSON is valid and can be directly parsed. Do not include any introduc
       }
 
       // Remove all non-ASCII characters from the extracted JSON string
-      const cleanedJsonString = jsonString.replace(/[^\x00-\x7F]/g, '');
+      // Remove all non-ASCII characters from the extracted JSON string
+      let cleanedJsonString = jsonString;
+
+      // Remove markdown code block fences at the start and end
+      cleanedJsonString = cleanedJsonString.replace(/^[\s]*```json[\s]*/, '');
+      cleanedJsonString = cleanedJsonString.replace(/^[\s]*```[\s]*/, '');
+      cleanedJsonString = cleanedJsonString.replace(/[\s]*```[\s]*$/, '');
+
+      // Remove all non-ASCII characters from the extracted JSON string
+      cleanedJsonString = cleanedJsonString.replace(/[^\x00-\x7F]/g, '');
+
+      // Remove trailing commas before closing brackets or braces
+      cleanedJsonString = cleanedJsonString.replace(/,\s*([\]}])/g, '$1');
 
       try {
         predictions = JSON.parse(cleanedJsonString);
-        console.log('Successfully parsed JSON string:', cleanedJsonString);
+        console.log(
+          'Successfully parsed JSON string after cleaning:',
+          cleanedJsonString,
+        );
       } catch (parseError) {
         console.error(
           'Failed to parse extracted and cleaned JSON string:',
           parseError,
           'Extracted string:',
           jsonString,
-          'Cleaned string:',
+          'Cleaned string (after targeted cleaning):',
           cleanedJsonString,
           'Raw text:',
           text,

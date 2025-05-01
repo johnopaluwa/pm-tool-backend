@@ -13,6 +13,7 @@ export interface Project {
   duration: string;
   keywords: string;
   businessSpecification: string;
+  reportGenerated?: boolean; // Add reportGenerated flag
 }
 
 @Injectable()
@@ -23,6 +24,7 @@ export class ProjectsService {
       name: 'Project Alpha',
       client: 'Client A',
       status: 'completed', // Changed to 'predicting' as it has prediction reviews
+      reportGenerated: true, // Set reportGenerated to true for Alpha
       description: 'This is a description for Project Alpha.',
       projectType: 'Web App',
       clientIndustry: 'Finance',
@@ -38,6 +40,7 @@ export class ProjectsService {
       name: 'Project Beta',
       client: 'Client B',
       status: 'completed', // Changed to 'predicting' as it has prediction reviews
+      reportGenerated: true, // Set reportGenerated to true for Beta
       description: 'This is a description for Project Beta.',
       projectType: 'Mobile App',
       clientIndustry: 'Retail',
@@ -53,6 +56,7 @@ export class ProjectsService {
       name: 'Project Gamma',
       client: 'Client C',
       status: 'new', // Changed to 'new' as it has no prediction reviews
+      reportGenerated: false, // Initialize reportGenerated
       description: 'This is a description for Project Gamma.',
       projectType: 'API',
       clientIndustry: 'Healthcare',
@@ -89,6 +93,7 @@ export class ProjectsService {
       name: project.projectName,
       client: project.clientName,
       status: 'new', // New projects start with status 'new'
+      reportGenerated: false, // New projects have reportGenerated as false
     };
     this.mockProjects.push(newProject);
     console.log('New project added:', newProject);
@@ -103,6 +108,16 @@ export class ProjectsService {
     if (project) {
       project.status = status;
       console.log(`Project ${id} status updated to ${status}`);
+      return project;
+    }
+    return undefined;
+  }
+
+  markReportGenerated(id: number): Project | undefined {
+    const project = this.mockProjects.find((p) => p.id === id);
+    if (project) {
+      project.reportGenerated = true;
+      console.log(`Project ${id} reportGenerated status updated to true`);
       return project;
     }
     return undefined;
