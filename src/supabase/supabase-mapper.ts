@@ -114,7 +114,6 @@ export class SupabaseMapper {
    */
   static toSupabaseProject(project: Partial<Project>): any {
     return {
-      id: project.id,
       name: project.name,
       client: project.client,
       status: project.status,
@@ -127,6 +126,39 @@ export class SupabaseMapper {
       keywords: project.keywords,
       businessSpecification: project.businessSpecification,
       reportGenerated: project.reportGenerated,
+    };
+  }
+  /**
+   * Maps data from the Supabase 'prediction_reviews' table to the backend PredictionReview model.
+   * @param data The data object from Supabase.
+   * @returns A PredictionReview model object.
+   */
+  static fromSupabasePredictionReview(data: any): any {
+    // Using any for now, will refine with interface later if needed
+    return {
+      id: data.id,
+      projectId: data.projectId,
+      projectName: data.projectname, // Note: case difference
+      clientName: data.clientname, // Note: case difference
+      generatedAt: data.generatedat, // Note: case difference
+      // predictions are handled separately
+    };
+  }
+
+  /**
+   * Maps a backend PredictionReview model to an object suitable for inserting/updating the Supabase 'prediction_reviews' table.
+   * @param review The PredictionReview model object.
+   * @returns An object formatted for Supabase insertion/update.
+   */
+  static toSupabasePredictionReview(review: any): any {
+    // Using any for now, will refine with interface later if needed
+    return {
+      id: review.id,
+      projectId: review.projectId,
+      projectname: review.projectName, // Note: case difference
+      clientname: review.clientName, // Note: case difference
+      generatedat: review.generatedAt, // Note: case difference
+      // predictions are handled separately
     };
   }
 }

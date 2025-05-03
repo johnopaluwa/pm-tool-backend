@@ -37,11 +37,10 @@ export class PredictionReviewsService {
     const { data: reviewResult, error: reviewError } = await this.supabase
       .from('prediction_reviews')
       .insert([
-        {
+        SupabaseMapper.toSupabasePredictionReview({
           ...reviewData,
-          clientname: reviewData.clientName,
-          generatedAt: new Date().toISOString(),
-        },
+          generatedAt: new Date().toISOString(), // Add generatedAt here as it's not in the input type
+        }),
       ])
       .select()
       .single();
@@ -85,8 +84,10 @@ export class PredictionReviewsService {
           SupabaseMapper.fromSupabasePrediction(item),
         )
       : [];
+    const mappedReview =
+      SupabaseMapper.fromSupabasePredictionReview(reviewResult);
     return {
-      ...reviewResult,
+      ...mappedReview,
       predictions: mappedPredictions,
     } as PredictionReview;
   }
