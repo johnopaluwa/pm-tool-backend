@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { Prediction } from '../../models/prediction.model';
+import { ProjectsService } from '../../projects/projects.service'; // Import ProjectsService
 import { SupabaseMapper } from '../../supabase/supabase-mapper'; // Import the mapper
 import { SupabaseService } from '../../supabase/supabase.service';
 
@@ -22,7 +23,10 @@ export class PredictionReviewsService {
   private supabase: SupabaseClient;
   private readonly logger = new Logger(PredictionReviewsService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly projectsService: ProjectsService, // Inject ProjectsService
+  ) {
     this.supabase = this.supabaseService.getClient();
   }
 
@@ -80,6 +84,12 @@ export class PredictionReviewsService {
       // For now, we'll just throw the error
       throw new InternalServerErrorException(predictionsError.message);
     }
+
+    // Update project status to 'completed' after successful review and prediction insertion
+    await this.projectsService.updateProjectStatus(
+      review.projectId,
+      'completed',
+    );
 
     console.log('New prediction review and predictions added.');
     // Map the inserted predictions back to the backend model before returning
