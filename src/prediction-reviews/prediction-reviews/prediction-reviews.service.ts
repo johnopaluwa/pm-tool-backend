@@ -34,10 +34,14 @@ export class PredictionReviewsService {
     const { predictions, ...reviewData } = review;
 
     // Insert the prediction review first
+    // Generate a UUID for the prediction review ID
+    const reviewId = crypto.randomUUID();
+
     const { data: reviewResult, error: reviewError } = await this.supabase
       .from('prediction_reviews')
       .insert([
         SupabaseMapper.toSupabasePredictionReview({
+          id: reviewId, // Explicitly set the generated UUID
           ...reviewData,
           generatedAt: new Date().toISOString(), // Add generatedAt here as it's not in the input type
         }),
@@ -95,7 +99,7 @@ export class PredictionReviewsService {
   async getPredictionReviews(): Promise<PredictionReview[]> {
     const { data: reviews, error: reviewsError } = await this.supabase
       .from('prediction_reviews')
-      .select('*');
+      .select('*, predictions(*)'); // Fetch predictions along with reviews
 
     if (reviewsError) {
       this.logger.error(
@@ -105,35 +109,14 @@ export class PredictionReviewsService {
       throw new InternalServerErrorException(reviewsError.message);
     }
 
-    // Fetch predictions for each review and map them
-    const reviewsWithPredictions = await Promise.all(
-      reviews.map(async (review) => {
-        const { data: predictions, error: predictionsError } =
-          await this.supabase
-            .from('predictions')
-            .select('*')
-            .eq('review_id', review.id);
+    // Map the fetched data using the updated mapper
+    const mappedReviews = reviews
+      ? reviews.map((reviewData) =>
+          SupabaseMapper.fromSupabasePredictionReview(reviewData),
+        )
+      : [];
 
-        if (predictionsError) {
-          this.logger.error(
-            `Error fetching predictions for review ${review.id} from Supabase: ${predictionsError.message}`,
-            predictionsError.stack,
-          );
-          // Decide how to handle this error - either skip the review or return it without predictions
-          return { ...review, predictions: [] }; // Return review with empty predictions array
-        }
-
-        // Map the fetched predictions
-        const mappedPredictions = predictions
-          ? predictions.map((item) =>
-              SupabaseMapper.fromSupabasePrediction(item),
-            )
-          : [];
-        return { ...review, predictions: mappedPredictions };
-      }),
-    );
-
-    return reviewsWithPredictions as PredictionReview[];
+    return mappedReviews as PredictionReview[];
   }
 
   async getPredictionReviewById(
@@ -141,7 +124,7 @@ export class PredictionReviewsService {
   ): Promise<PredictionReview | undefined> {
     const { data: review, error: reviewError } = await this.supabase
       .from('prediction_reviews')
-      .select('*')
+      .select('*, predictions(*)') // Fetch predictions along with the review
       .eq('id', id)
       .single();
 
@@ -158,30 +141,10 @@ export class PredictionReviewsService {
       return undefined;
     }
 
-    // Fetch associated predictions and map them
-    const { data: predictions, error: predictionsError } = await this.supabase
-      .from('predictions')
-      .select('*')
-      .eq('review_id', review.id);
-
-    if (predictionsError) {
-      this.logger.error(
-        `Error fetching predictions for review ${review.id} from Supabase: ${predictionsError.message}`,
-        predictionsError.stack,
-      );
-      // Decide how to handle this error
-      return { ...review, predictions: [] }; // Return review with empty predictions array
-    }
-
-    // Map the fetched predictions
-    const mappedPredictions = predictions
-      ? predictions.map((item) => SupabaseMapper.fromSupabasePrediction(item))
-      : [];
-
-    return {
-      ...review,
-      predictions: mappedPredictions,
-    } as PredictionReview;
+    // Map the fetched data using the updated mapper
+    return SupabaseMapper.fromSupabasePredictionReview(
+      review,
+    ) as PredictionReview;
   }
 
   async getPredictionReviewsByProjectId(
@@ -189,7 +152,7 @@ export class PredictionReviewsService {
   ): Promise<PredictionReview[]> {
     const { data: reviews, error: reviewsError } = await this.supabase
       .from('prediction_reviews')
-      .select('*')
+      .select('*, predictions(*)') // Fetch predictions along with reviews
       .eq('projectId', projectId);
 
     if (reviewsError) {
@@ -200,28 +163,13 @@ export class PredictionReviewsService {
       throw new InternalServerErrorException(reviewsError.message);
     }
 
-    // Fetch predictions for each review
-    const reviewsWithPredictions = await Promise.all(
-      reviews.map(async (review) => {
-        const { data: predictions, error: predictionsError } =
-          await this.supabase
-            .from('predictions')
-            .select('*')
-            .eq('review_id', review.id);
+    // Map the fetched data using the updated mapper
+    const mappedReviews = reviews
+      ? reviews.map((reviewData) =>
+          SupabaseMapper.fromSupabasePredictionReview(reviewData),
+        )
+      : [];
 
-        if (predictionsError) {
-          this.logger.error(
-            `Error fetching predictions for review ${review.id} from Supabase: ${predictionsError.message}`,
-            predictionsError.stack,
-          );
-          // Decide how to handle this error
-          return { ...review, predictions: [] }; // Return review with empty predictions array
-        }
-
-        return { ...review, predictions: predictions as Prediction[] };
-      }),
-    );
-
-    return reviewsWithPredictions as PredictionReview[];
+    return mappedReviews as PredictionReview[];
   }
 }

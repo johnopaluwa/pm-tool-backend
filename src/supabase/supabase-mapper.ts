@@ -1,4 +1,5 @@
 import { Prediction } from '../models/prediction.model';
+import { PredictionReview } from '../prediction-reviews/prediction-reviews/prediction-reviews.service'; // Import PredictionReview interface
 import { Project } from '../projects/projects.service'; // Import Project interface
 
 export class SupabaseMapper {
@@ -21,10 +22,10 @@ export class SupabaseMapper {
       acceptanceCriteria: data.acceptanceCriteria || [],
       dependencies: data.dependencies || [],
       assumptions: data.assumptions || [],
-      edgeCases: data.edgecases || [], // Note: case difference
-      nonFunctionalRequirements: data.nonfunctionalrequirements, // Note: case difference
+      edgeCases: data.edgeCases || [],
+      nonFunctionalRequirements: data.nonFunctionalRequirements,
       visuals: data.visuals || [],
-      dataRequirements: data.datarequirements, // Note: case difference
+      dataRequirements: data.dataRequirements,
       impact: data.impact,
       priority: data.priority,
       estimatedTime: data.estimatedTime,
@@ -61,10 +62,10 @@ export class SupabaseMapper {
       acceptanceCriteria: prediction.acceptanceCriteria,
       dependencies: prediction.dependencies,
       assumptions: prediction.assumptions,
-      edgecases: prediction.edgeCases, // Note: case difference
-      nonfunctionalrequirements: prediction.nonFunctionalRequirements, // Note: case difference
+      edgeCases: prediction.edgeCases,
+      nonFunctionalRequirements: prediction.nonFunctionalRequirements,
       visuals: prediction.visuals,
-      datarequirements: prediction.dataRequirements, // Note: case difference
+      dataRequirements: prediction.dataRequirements,
       impact: prediction.impact,
       priority: prediction.priority,
       estimatedTime: prediction.estimatedTime,
@@ -133,15 +134,21 @@ export class SupabaseMapper {
    * @param data The data object from Supabase.
    * @returns A PredictionReview model object.
    */
-  static fromSupabasePredictionReview(data: any): any {
-    // Using any for now, will refine with interface later if needed
+  static fromSupabasePredictionReview(data: any): PredictionReview {
+    // Map the nested predictions array if it exists
+    const predictions = data.predictions
+      ? data.predictions.map((predictionData: any) =>
+          this.fromSupabasePrediction(predictionData),
+        )
+      : [];
+
     return {
       id: data.id,
       projectId: data.projectId,
-      projectName: data.projectname, // Note: case difference
-      clientName: data.clientname, // Note: case difference
-      generatedAt: data.generatedat, // Note: case difference
-      // predictions are handled separately
+      projectName: data.projectName,
+      clientName: data.clientName,
+      generatedAt: data.generatedAt,
+      predictions: predictions, // Include the mapped predictions
     };
   }
 
@@ -155,9 +162,9 @@ export class SupabaseMapper {
     return {
       id: review.id,
       projectId: review.projectId,
-      projectname: review.projectName, // Note: case difference
-      clientname: review.clientName, // Note: case difference
-      generatedat: review.generatedAt, // Note: case difference
+      projectName: review.projectName,
+      clientName: review.clientName,
+      generatedAt: review.generatedAt,
       // predictions are handled separately
     };
   }

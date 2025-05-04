@@ -280,19 +280,99 @@ Ensure the JSON is valid and can be directly parsed. Generate at least 3 user st
           cleanedJsonString,
         );
       } catch (parseError) {
-        console.error(
-          'Failed to parse extracted and cleaned JSON string:',
-          parseError,
-          'Extracted string:',
-          jsonString,
-          'Cleaned string (after targeted cleaning):',
-          cleanedJsonString,
-          'Raw text:',
-          text,
+        this.logger.warn(
+          `Initial parsing of cleaned JSON string failed. Attempting LLM-based cleanup. Error: ${parseError}`,
+          {
+            extractedString: jsonString,
+            cleanedString: cleanedJsonString,
+            rawText: text,
+          },
         );
-        throw new InternalServerErrorException(
-          'Failed to parse predictions from AI response after cleaning.',
-        );
+
+        // Attempt LLM-based cleanup
+        const cleanupPrompt = `The following text was intended to be a JSON array of objects with a specific structure, but it failed to parse after initial cleaning. Please clean and format this text into a valid JSON array based on the structure provided below. Do not include any introductory or concluding text, explanations, or markdown formatting (like \`\`\`json\`). Provide ONLY the valid JSON array.
+
+Expected JSON structure (each object in the array should follow this):
+{
+  "id": "unique-id-string", // REQUIRED
+  "type": "user-story" | "bug", // REQUIRED: Must be one of these two values
+  "title": "Concise title", // REQUIRED
+  "description": "Detailed description", // REQUIRED
+  "similarityScore": "number between 0 and 100 representing relevance to the new project based on historical data", // REQUIRED
+  "frequency": "number between 0 and 100 representing how common this type of prediction is in the historical data", // REQUIRED
+  "sourceProject": "${projectData.projectName}", // REQUIRED: Use the new project name as source
+  "status": "pending", // REQUIRED: Default status
+  "estimatedTime": number, // REQUIRED: Estimated time in hours. It is crucial that this field is accurately predicted and included for each item, as this information is essential for the frontend display.
+
+  // Fields for User Stories (include only if type is 'user-story')
+  "acceptanceCriteria": string[], // REQUIRED: List of acceptance criteria
+  "dependencies": string[], // REQUIRED: List of dependencies (e.g., IDs of other stories/bugs)
+  "assumptions": string[], // REQUIRED: List of assumptions
+  "edgeCases": string[], // REQUIRED: List of edge cases
+  "nonFunctionalRequirements": string, // REQUIRED: Text field for non-functional requirements
+  "visuals": string[], // REQUIRED: List of URLs or references to visuals/mockups
+  "dataRequirements": string, // REQUIRED: Text field for data requirements
+  "impact": string, // REQUIRED: Text field for impact
+  "priority": "Low" | "Medium" | "High" | "Critical", // REQUIRED: Priority level
+
+
+  // Fields for Bug Details (include only if type is 'bug')
+  "stepsToReproduce": string[], // REQUIRED: List of steps to reproduce
+  "actualResult": string, // REQUIRED: Text field for actual result
+  "expectedResult": string, // REQUIRED: Text field for expected result
+  "environment": string, // REQUIRED: Text field for environment details
+  "userAccountDetails": string, // REQUIRED: Text field for user/account details (non-sensitive)
+  "screenshotsVideos": string[], // REQUIRED: List of URLs or references to screenshots/videos
+  "errorMessagesLogs": string, // REQUIRED: Text field for error messages/logs
+  "frequencyOfOccurrence": "Consistent" | "Intermittent" | "Rare", // REQUIRED: Frequency of occurrence
+  "severity": "Cosmetic" | "Minor" | "Major" | "Blocking", // REQUIRED: Severity level
+  "workaround": string, // REQUIRED: Text field for workaround
+  "relatedIssues": string[] // REQUIRED: List of related issue IDs
+}
+
+Text to clean and format:
+${text}
+`;
+
+        try {
+          const cleanupCompletion = await this.openai.chat.completions.create({
+            model: 'google/gemini-2.5-flash-preview:thinking', // Use the specified OpenRouter model
+            messages: [
+              {
+                role: 'user',
+                content: cleanupPrompt,
+              },
+            ],
+          });
+
+          const cleanedText = cleanupCompletion.choices[0].message.content;
+          this.logger.debug(`LLM cleanup response text: ${cleanedText}`);
+
+          if (cleanedText === null) {
+            this.logger.error('LLM cleanup response content was null.');
+            throw new InternalServerErrorException(
+              'LLM cleanup response content was null.',
+            );
+          }
+
+          // Attempt to parse the cleaned text from the second LLM call
+          predictions = JSON.parse(cleanedText);
+          this.logger.debug(
+            'Successfully parsed JSON string after LLM cleanup.',
+          );
+        } catch (cleanupError) {
+          this.logger.error(
+            `LLM cleanup failed or the cleaned text is still not valid JSON: ${cleanupError}`,
+            {
+              rawText: text,
+              initialCleanedString: cleanedJsonString,
+            },
+          );
+          // If LLM cleanup fails or the result is still unparseable, throw the original error
+          throw new InternalServerErrorException(
+            'Failed to parse predictions from AI response after initial cleaning and LLM cleanup attempt.',
+          );
+        }
       }
       // Assign unique database IDs (UUIDs) and map AI-generated IDs
       predictions = predictions.map((pred: any) => ({
@@ -331,39 +411,7 @@ Ensure the JSON is valid and can be directly parsed. Generate at least 3 user st
         workaround: pred.workaround || '', // REQUIRED: Text field for workaround
         relatedIssues: pred.relatedIssues || [], // REQUIRED: List of related issue IDs
       }));
-
-      // Save generated predictions to Supabase
-      const predictionsToInsert = predictions.map((pred) =>
-        SupabaseMapper.toSupabasePrediction(pred),
-      ); // Use mapper here
-
-      const { data: insertedPredictions, error: insertError } =
-        await this.supabase
-          .from('predictions')
-          .insert(predictionsToInsert)
-          .select();
-
-      if (insertError) {
-        this.logger.error(
-          `Error inserting predictions into Supabase: ${insertError.message}`,
-          insertError.stack,
-        );
-        // Decide how to handle this error - throw or return empty array
-        throw new InternalServerErrorException(
-          `Failed to save predictions: ${insertError.message}`,
-        );
-      }
-
-      // Map the inserted data back to Prediction model before returning
-      const mappedInsertedPredictions = insertedPredictions.map((data) =>
-        SupabaseMapper.fromSupabasePrediction(data),
-      );
-
-      // Update project status to 'completed' after successful generation and saving
-      // Ensure projectsService.updateProjectStatus is awaited if it's async
-      await this.projectsService.updateProjectStatus(projectId, 'completed');
-
-      return mappedInsertedPredictions; // Return mapped data
+      return predictions; // Return the generated predictions
     } catch (error: any) {
       // Catch error as any to access message property
       this.logger.error(
@@ -376,6 +424,42 @@ Ensure the JSON is valid and can be directly parsed. Generate at least 3 user st
       await this.projectsService.updateProjectStatus(projectId, 'new'); // Revert to 'new' on error
       throw new InternalServerErrorException(
         `Failed to generate or save predictions: ${error.message}`,
+      );
+    }
+  }
+
+  async generateAndSavePredictionReview(
+    projectData: any, // Assuming projectData contains projectName and clientName
+    projectId: number,
+  ): Promise<PredictionReview> {
+    try {
+      // 1. Generate predictions
+      const generatedPredictions = await this.generatePredictions(
+        projectData,
+        projectId,
+      );
+
+      // 2. Create CreatePredictionReviewDto
+      const reviewDto: Omit<PredictionReview, 'id' | 'generatedAt'> = {
+        projectId: projectId,
+        projectName: projectData.projectName, // Assuming projectName is in projectData
+        clientName: projectData.clientName, // Assuming clientName is in projectData
+        predictions: generatedPredictions,
+      };
+
+      // 3. Save the prediction review and link predictions
+      const savedReview =
+        await this.predictionReviewsService.addPredictionReview(reviewDto);
+
+      return savedReview;
+    } catch (error: any) {
+      this.logger.error(
+        'Error generating and saving prediction review:',
+        error.message,
+        error.stack,
+      );
+      throw new InternalServerErrorException(
+        `Failed to generate and save prediction review: ${error.message}`,
       );
     }
   }

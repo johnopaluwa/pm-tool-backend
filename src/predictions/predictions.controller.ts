@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { PredictionReview } from 'src/prediction-reviews/prediction-reviews/prediction-reviews.service'; // Import PredictionReview
 import { Prediction } from '../models/prediction.model'; // Corrected import path
 import { PredictionsService } from './predictions.service';
 
@@ -13,6 +14,17 @@ export class PredictionsController {
   ): Promise<Prediction[]> {
     // Updated return type to Promise and added projectId parameter
     return this.predictionsService.generatePredictions(projectData, +projectId);
+  }
+
+  @Post('generate-and-review/:projectId')
+  async generateAndSavePredictionReview(
+    @Param('projectId') projectId: string,
+    @Body() projectData: any, // Assuming projectData is needed for generation
+  ): Promise<PredictionReview> {
+    return this.predictionsService.generateAndSavePredictionReview(
+      projectData,
+      +projectId,
+    );
   }
 
   @Post('feedback')
