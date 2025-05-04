@@ -157,7 +157,7 @@ ${predictionsForProject
     }
 
     // Formulate the prompt including historical data
-    const prompt = `YOUR RESPONSE MUST BE A VALID JSON ARRAY. DO NOT INCLUDE ANY INTRODUCTORY OR CONCLUDING TEXT, EXPLANATIONS, OR MARKDOWN FORMATTING (like \`\`\`json\`). PROVIDE ONLY THE JSON ARRAY.
+    const prompt = `YOUR RESPONSE MUST BE A VALID JSON ARRAY. DO NOT INCLUDE ANY INTRODUCTORY OR CONCLUDING TEXT, EXPLANATIONS, OR MARKDOWN FORMATTING. SPECIFICALLY, DO NOT INCLUDE \`\`\`json\` OR \`\`\` AT THE BEGINNING OR END OF THE RESPONSE. PROVIDE ONLY THE JSON ARRAY.
 
 Analyze the following historical project data and their predicted user stories/bugs to generate a list of potential user stories and bugs for a new software project with the characteristics provided below. Identify common patterns, recurring issues, and relevant features from the historical data that might apply to the new project.
 
@@ -258,39 +258,73 @@ Ensure the JSON is valid and can be directly parsed. Generate at least 3 user st
         );
       }
 
-      // Remove all non-ASCII characters from the extracted JSON string
-      // Remove all non-ASCII characters from the extracted JSON string
+      // More robust cleaning of the extracted JSON string
       let cleanedJsonString = jsonString;
 
-      // Remove markdown code block fences at the start and end
-      cleanedJsonString = cleanedJsonString.replace(/^[\s]*```json[\s]*/, '');
-      cleanedJsonString = cleanedJsonString.replace(/^[\s]*```[\s]*/, '');
+      // Remove markdown code block fences and any surrounding whitespace
+      cleanedJsonString = cleanedJsonString.replace(
+        /^[\s]*```(?:json)?[\s]*/,
+        '',
+      );
       cleanedJsonString = cleanedJsonString.replace(/[\s]*```[\s]*$/, '');
 
-      // Remove all non-ASCII characters from the extracted JSON string
-      cleanedJsonString = cleanedJsonString.replace(/[^\x00-\x7F]/g, '');
+      // Remove any characters before the first '[' and after the last ']'
+      const firstBracket = cleanedJsonString.indexOf('[');
+      const lastBracket = cleanedJsonString.lastIndexOf(']');
+      if (
+        firstBracket !== -1 &&
+        lastBracket !== -1 &&
+        lastBracket > firstBracket
+      ) {
+        cleanedJsonString = cleanedJsonString.substring(
+          firstBracket,
+          lastBracket + 1,
+        );
+      } else {
+        // If after removing fences, we still don't have a clear JSON array structure,
+        // log and proceed to LLM cleanup with the original extracted string.
+        this.logger.warn(
+          'Could not find valid JSON array structure after removing fences. Proceeding to LLM cleanup.',
+          { extractedString: jsonString, cleanedAttempt: cleanedJsonString },
+        );
+        cleanedJsonString = jsonString; // Revert to the string after initial [] extraction
+      }
+
+      // Remove all non-printable ASCII characters except common whitespace (tabs, newlines, carriage returns)
+      cleanedJsonString = cleanedJsonString.replace(
+        /[^\x20-\x7E\x09\x0A\x0D]/g,
+        '',
+      );
 
       // Remove trailing commas before closing brackets or braces
       cleanedJsonString = cleanedJsonString.replace(/,\s*([\]}])/g, '$1');
 
+      // Log the cleaned string before parsing for debugging
+      this.logger.debug(
+        `Attempting to parse cleaned JSON string: ${cleanedJsonString}`,
+      );
+
       try {
         predictions = JSON.parse(cleanedJsonString);
-        console.log(
-          'Successfully parsed JSON string after cleaning:',
-          cleanedJsonString,
-        );
-      } catch (parseError) {
+        this.logger.log('Successfully parsed JSON string after cleaning.', {
+          cleanedString: cleanedJsonString,
+        });
+      } catch (parseError: any) {
+        // Catch parseError as any to access message
         this.logger.warn(
-          `Initial parsing of cleaned JSON string failed. Attempting LLM-based cleanup. Error: ${parseError}`,
+          `Initial parsing of cleaned JSON string failed. Attempting LLM-based cleanup. Error: ${parseError.message}`,
           {
             extractedString: jsonString,
             cleanedString: cleanedJsonString,
             rawText: text,
+            parseErrorMessage: parseError.message,
           },
         );
 
         // Attempt LLM-based cleanup
-        const cleanupPrompt = `The following text was intended to be a JSON array of objects with a specific structure, but it failed to parse after initial cleaning. Please clean and format this text into a valid JSON array based on the structure provided below. Do not include any introductory or concluding text, explanations, or markdown formatting (like \`\`\`json\`). Provide ONLY the valid JSON array.
+        const cleanupPrompt = `The following text failed to parse as a JSON array after initial cleaning. It was intended to be a JSON array of objects following the structure provided below. Your task is to correct any syntax errors, missing commas, incorrect formatting, or extraneous characters to produce a VALID JSON array.
+
+Provide ONLY the corrected JSON array. DO NOT include any introductory or concluding text, explanations, or markdown formatting (like \`\`\`json\` or \`\`\`). The output must be a directly parseable JSON array.
 
 Expected JSON structure (each object in the array should follow this):
 {
@@ -360,12 +394,14 @@ ${text}
           this.logger.debug(
             'Successfully parsed JSON string after LLM cleanup.',
           );
-        } catch (cleanupError) {
+        } catch (cleanupError: any) {
+          // Catch cleanupError as any to access message
           this.logger.error(
-            `LLM cleanup failed or the cleaned text is still not valid JSON: ${cleanupError}`,
+            `LLM cleanup failed or the cleaned text is still not valid JSON: ${cleanupError.message}`,
             {
               rawText: text,
               initialCleanedString: cleanedJsonString,
+              cleanupErrorMessage: cleanupError.message,
             },
           );
           // If LLM cleanup fails or the result is still unparseable, throw the original error
@@ -389,8 +425,8 @@ ${text}
 
         // Fields for User Stories (include only if type is 'user-story')
         acceptanceCriteria: pred.acceptanceCriteria || [], // REQUIRED: Provide default empty array
-        dependencies: pred.dependencies || [], // REQUIRED: Provide default empty array
-        assumptions: pred.assumptions || [], // REQUIRED: Provide default empty array
+        dependencies: pred.dependencies || [], // REQUIRED: List of dependencies (e.g., IDs of other stories/bugs)
+        assumptions: pred.assumptions || [], // REQUIRED: List of assumptions
         edgeCases: pred.edgeCases || [], // REQUIRED: List of edge cases
         nonFunctionalRequirements: pred.nonFunctionalRequirements || '', // REQUIRED: Text field for non-functional requirements
         visuals: pred.visuals || [], // REQUIRED: List of URLs or references to visuals/mockups
@@ -442,8 +478,8 @@ ${text}
       // 2. Create CreatePredictionReviewDto
       const reviewDto: Omit<PredictionReview, 'id' | 'generatedAt'> = {
         projectId: projectId,
-        projectName: projectData.projectName, // Assuming projectName is in projectData
-        clientName: projectData.clientName, // Assuming clientName is in projectData
+        projectName: projectData.name, // Assuming name is in projectData
+        clientName: projectData.client, // Assuming client is in projectData
         predictions: generatedPredictions,
       };
 
