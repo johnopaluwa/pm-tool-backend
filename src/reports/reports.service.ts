@@ -66,7 +66,28 @@ export class ReportsService {
         }
       });
 
-      console.log('Overall reports generated.');
+      // Persist overall report data
+      const { data: insertedOverallReport, error: insertOverallError } =
+        await this.supabase
+          .from('reports')
+          .insert([
+            {
+              completion_rate: completionRate,
+              status_distribution: statusDistribution,
+            },
+          ])
+          .select('*')
+          .single();
+
+      if (insertOverallError) {
+        this.logger.error(
+          `Error inserting overall report into Supabase: ${insertOverallError.message}`,
+          insertOverallError.stack,
+        );
+        // Do not throw an error here, just log it, as the report was generated
+      }
+
+      console.log('Overall reports generated and persisted.');
       return { completionRate, statusDistribution };
     } catch (error: any) {
       this.logger.error(
@@ -87,8 +108,8 @@ export class ReportsService {
     try {
       const { data: predictionsData, error } = await this.supabase
         .from('predictions')
-        .select('*') // Select all to use mapper
-        .eq('project_id', projectId);
+        .select('*, prediction_reviews!inner(projectId)') // Select predictions columns and join with prediction_reviews to get projectId
+        .eq('prediction_reviews.projectId', projectId); // Filter by projectId from prediction_reviews
 
       if (error) {
         this.logger.error(
@@ -118,7 +139,29 @@ export class ReportsService {
         });
       }
 
-      console.log(`Reports generated for project ${projectId}.`);
+      // Persist project report data
+      const { data: insertedProjectReport, error: insertProjectError } =
+        await this.supabase
+          .from('reports')
+          .insert([
+            {
+              project_id: projectId,
+              predictions_count: predictionsCount,
+              prediction_type_distribution: predictionTypeDistribution,
+            },
+          ])
+          .select('*')
+          .single();
+
+      if (insertProjectError) {
+        this.logger.error(
+          `Error inserting project report into Supabase: ${insertProjectError.message}`,
+          insertProjectError.stack,
+        );
+        // Do not throw an error here, just log it, as the report was generated
+      }
+
+      console.log(`Reports generated and persisted for project ${projectId}.`);
       return { predictionsCount, predictionTypeDistribution };
     } catch (error: any) {
       this.logger.error(
@@ -159,4 +202,65 @@ export class ReportsService {
 
   // Removed file-based status methods as reports are generated on the fly
   // Removed TODO comment as the main reporting logic is now implemented
+  async getOverallReport(): Promise<any | undefined> {
+    try {
+      const { data, error } = await this.supabase
+        .from('reports')
+        .select('completion_rate, status_distribution')
+        .is('project_id', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        this.logger.error(
+          `Error fetching overall report from Supabase: ${error.message}`,
+          error.stack,
+        );
+        throw new InternalServerErrorException(error.message);
+      }
+
+      return data || undefined;
+    } catch (error: any) {
+      this.logger.error(
+        'Failed to fetch overall report:',
+        error.message,
+        error.stack,
+      );
+      throw new InternalServerErrorException(
+        `Failed to fetch overall report: ${error.message}`,
+      );
+    }
+  }
+
+  async getProjectReport(projectId: number): Promise<any | undefined> {
+    try {
+      const { data, error } = await this.supabase
+        .from('reports')
+        .select('predictions_count, prediction_type_distribution')
+        .eq('project_id', projectId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        this.logger.error(
+          `Error fetching project report from Supabase: ${error.message}`,
+          error.stack,
+        );
+        throw new InternalServerErrorException(error.message);
+      }
+
+      return data || undefined;
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to fetch project report for project ${projectId}:`,
+        error.message,
+        error.stack,
+      );
+      throw new InternalServerErrorException(
+        `Failed to fetch project report for project ${projectId}: ${error.message}`,
+      );
+    }
+  }
 }

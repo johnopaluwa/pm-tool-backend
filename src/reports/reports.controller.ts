@@ -17,53 +17,27 @@ export class ReportsController {
     };
   }
 
-  // Removed getOverallReportsStatus as reports are generated on the fly
-
-  @Get('overall/completion-rate')
-  async getOverallProjectCompletionRate(): Promise<number> {
-    const reports = await this.reportsService.generateOverallReports();
-    return reports.completionRate;
-  }
-
-  @Get('overall/status-distribution')
-  async getOverallProjectStatusDistribution(): Promise<{
-    [status: string]: number;
-  }> {
-    const reports = await this.reportsService.generateOverallReports();
-    return reports.statusDistribution;
-  }
-
   @Post('generate/projects/:projectId')
   async generateProjectReports(
     @Param('projectId') projectId: string,
   ): Promise<{ status: string }> {
-    // Reports are now generated on the fly when requested via GET endpoints
-    // This endpoint can be kept to trigger a regeneration if needed, but the GET endpoints are the primary way to get reports
-    // For now, we'll just return a success status indicating the capability exists
+    await this.reportsService.generateProjectReports(+projectId);
     return {
-      status: `Project report generation triggered for project ${projectId} (reports are generated on demand via GET endpoints)`,
+      status: `Project report generation triggered for project ${projectId}`,
     };
   }
 
-  // Removed getProjectReportsStatus as reports are generated on the fly
+  // Removed getOverallReportsStatus as reports are generated on the fly
 
-  @Get('projects/:projectId/predictions-count')
-  async getPredictionsCountForProject(
-    @Param('projectId') projectId: string,
-  ): Promise<number> {
-    const reports =
-      await this.reportsService.generateProjectReports(+projectId);
-    return reports.predictionsCount;
+  @Get('overall')
+  async getOverallReport(): Promise<any | undefined> {
+    return this.reportsService.getOverallReport();
   }
 
-  @Get('projects/:projectId/prediction-type-distribution')
-  async getPredictionTypeDistributionForProject(
+  @Get('project/:projectId')
+  async getProjectReport(
     @Param('projectId') projectId: string,
-  ): Promise<{ [type: string]: number }> {
-    const reports =
-      await this.reportsService.generateProjectReports(+projectId);
-    return reports.predictionTypeDistribution;
+  ): Promise<any | undefined> {
+    return this.reportsService.getProjectReport(+projectId);
   }
-
-  // TODO: Implement other report endpoints here
 }

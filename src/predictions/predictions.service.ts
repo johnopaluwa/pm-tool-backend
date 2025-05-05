@@ -238,28 +238,8 @@ Ensure the JSON is valid and can be directly parsed. Generate at least 3 user st
         throw new InternalServerErrorException('AI response content was null.');
       }
 
-      // Attempt to parse the JSON response
-      // Need to handle cases where the API might return extra text or markdown
-      // Attempt to parse the JSON response, handling potential surrounding text or markdown
       let predictions: Prediction[] = [];
-      let jsonString = '';
-      const startIndex = text.indexOf('[');
-      const endIndex = text.lastIndexOf(']');
-
-      if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
-        jsonString = text.substring(startIndex, endIndex + 1);
-      } else {
-        console.error(
-          'Could not find valid JSON array in AI response. Raw text:',
-          text,
-        );
-        throw new InternalServerErrorException(
-          'AI response did not contain a valid JSON array.',
-        );
-      }
-
-      // More robust cleaning of the extracted JSON string
-      let cleanedJsonString = jsonString;
+      let cleanedJsonString = text;
 
       // Remove markdown code block fences and any surrounding whitespace
       cleanedJsonString = cleanedJsonString.replace(
@@ -268,27 +248,22 @@ Ensure the JSON is valid and can be directly parsed. Generate at least 3 user st
       );
       cleanedJsonString = cleanedJsonString.replace(/[\s]*```[\s]*$/, '');
 
-      // Remove any characters before the first '[' and after the last ']'
-      const firstBracket = cleanedJsonString.indexOf('[');
-      const lastBracket = cleanedJsonString.lastIndexOf(']');
-      if (
-        firstBracket !== -1 &&
-        lastBracket !== -1 &&
-        lastBracket > firstBracket
-      ) {
-        cleanedJsonString = cleanedJsonString.substring(
-          firstBracket,
-          lastBracket + 1,
+      // Find the first '[' and last ']' to extract the core JSON array
+      const startIndex = cleanedJsonString.indexOf('[');
+      const endIndex = cleanedJsonString.lastIndexOf(']');
+
+      if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
+        this.logger.error(
+          'Could not find valid JSON array structure in AI response after initial cleaning. Raw text:',
+          text,
         );
-      } else {
-        // If after removing fences, we still don't have a clear JSON array structure,
-        // log and proceed to LLM cleanup with the original extracted string.
-        this.logger.warn(
-          'Could not find valid JSON array structure after removing fences. Proceeding to LLM cleanup.',
-          { extractedString: jsonString, cleanedAttempt: cleanedJsonString },
+        throw new InternalServerErrorException(
+          'AI response did not contain a valid JSON array.',
         );
-        cleanedJsonString = jsonString; // Revert to the string after initial [] extraction
       }
+
+      // Extract the substring containing the JSON array
+      cleanedJsonString = cleanedJsonString.substring(startIndex, endIndex + 1);
 
       // Remove all non-printable ASCII characters except common whitespace (tabs, newlines, carriage returns)
       cleanedJsonString = cleanedJsonString.replace(
@@ -296,8 +271,15 @@ Ensure the JSON is valid and can be directly parsed. Generate at least 3 user st
         '',
       );
 
-      // Remove trailing commas before closing brackets or braces
+      // Remove trailing commas within arrays or objects
+      // This regex looks for a comma followed by optional whitespace and then a closing bracket or brace,
+      // ensuring it's not part of a string value.
       cleanedJsonString = cleanedJsonString.replace(/,\s*([\]}])/g, '$1');
+      // Add an extra step to specifically target trailing commas within arrays that might be missed
+      cleanedJsonString = cleanedJsonString.replace(/,\s*\]/g, ']');
+
+      // Remove leading/trailing whitespace
+      cleanedJsonString = cleanedJsonString.trim();
 
       // Log the cleaned string before parsing for debugging
       this.logger.debug(
@@ -310,21 +292,32 @@ Ensure the JSON is valid and can be directly parsed. Generate at least 3 user st
           cleanedString: cleanedJsonString,
         });
       } catch (parseError: any) {
-        // Catch parseError as any to access message
         this.logger.warn(
           `Initial parsing of cleaned JSON string failed. Attempting LLM-based cleanup. Error: ${parseError.message}`,
           {
-            extractedString: jsonString,
+            extractedString: text,
             cleanedString: cleanedJsonString,
             rawText: text,
             parseErrorMessage: parseError.message,
           },
         );
 
-        // Attempt LLM-based cleanup
-        const cleanupPrompt = `The following text failed to parse as a JSON array after initial cleaning. It was intended to be a JSON array of objects following the structure provided below. Your task is to correct any syntax errors, missing commas, incorrect formatting, or extraneous characters to produce a VALID JSON array.
+        let cleanupAttempts = 0;
+        const maxCleanupAttempts = 20;
+        let lastCleanupError: any = parseError;
+        let cleanedText: string | null = cleanedJsonString; // Start with the initially cleaned string
+
+        while (cleanupAttempts < maxCleanupAttempts) {
+          cleanupAttempts++;
+          this.logger.debug(
+            `Attempting LLM cleanup (Attempt ${cleanupAttempts}/${maxCleanupAttempts})`,
+          );
+
+          const cleanupPrompt = `The following text failed to parse as a JSON array after initial cleaning. It was intended to be a JSON array of objects following the structure provided below. Your task is to correct any syntax errors, missing commas, incorrect formatting, or extraneous characters to produce a VALID JSON array.
 
 Provide ONLY the corrected JSON array. DO NOT include any introductory or concluding text, explanations, or markdown formatting (like \`\`\`json\` or \`\`\`). The output must be a directly parseable JSON array.
+
+Previous parsing error: ${lastCleanupError.message}
 
 Expected JSON structure (each object in the array should follow this):
 {
@@ -365,48 +358,69 @@ Expected JSON structure (each object in the array should follow this):
 }
 
 Text to clean and format:
-${text}
+${cleanedText}
 `;
 
-        try {
-          const cleanupCompletion = await this.openai.chat.completions.create({
-            model: 'google/gemini-2.5-flash-preview:thinking', // Use the specified OpenRouter model
-            messages: [
+          try {
+            const cleanupCompletion = await this.openai.chat.completions.create(
               {
-                role: 'user',
-                content: cleanupPrompt,
+                model: 'google/gemini-2.5-flash-preview:thinking', // Use the specified OpenRouter model
+                messages: [
+                  {
+                    role: 'user',
+                    content: cleanupPrompt,
+                  },
+                ],
               },
-            ],
-          });
-
-          const cleanedText = cleanupCompletion.choices[0].message.content;
-          this.logger.debug(`LLM cleanup response text: ${cleanedText}`);
-
-          if (cleanedText === null) {
-            this.logger.error('LLM cleanup response content was null.');
-            throw new InternalServerErrorException(
-              'LLM cleanup response content was null.',
             );
-          }
 
-          // Attempt to parse the cleaned text from the second LLM call
-          predictions = JSON.parse(cleanedText);
-          this.logger.debug(
-            'Successfully parsed JSON string after LLM cleanup.',
-          );
-        } catch (cleanupError: any) {
-          // Catch cleanupError as any to access message
+            cleanedText = cleanupCompletion.choices[0].message.content;
+            this.logger.debug(
+              `LLM cleanup response text (Attempt ${cleanupAttempts}): ${cleanedText}`,
+            );
+
+            if (cleanedText === null) {
+              this.logger.error(
+                `LLM cleanup response content was null (Attempt ${cleanupAttempts}).`,
+              );
+              lastCleanupError = new Error(
+                'LLM cleanup response content was null.',
+              );
+              continue; // Continue to the next attempt
+            }
+
+            // Attempt to parse the cleaned text from the LLM
+            predictions = JSON.parse(cleanedText);
+            this.logger.debug(
+              `Successfully parsed JSON string after LLM cleanup (Attempt ${cleanupAttempts}).`,
+            );
+            break; // Exit the loop if parsing is successful
+          } catch (cleanupError: any) {
+            // Catch cleanupError as any to access message
+            this.logger.warn(
+              `LLM cleanup failed or the cleaned text is still not valid JSON (Attempt ${cleanupAttempts}): ${cleanupError.message}`,
+              {
+                rawText: text,
+                initialCleanedString: cleanedJsonString,
+                cleanupErrorMessage: cleanupError.message,
+              },
+            );
+            lastCleanupError = cleanupError; // Update the last error for the next prompt
+            // Continue to the next attempt
+          }
+        }
+
+        // If after max attempts, parsing is still not successful, throw a final error
+        if (cleanupAttempts === maxCleanupAttempts) {
           this.logger.error(
-            `LLM cleanup failed or the cleaned text is still not valid JSON: ${cleanupError.message}`,
+            `Failed to parse predictions after ${maxCleanupAttempts} LLM cleanup attempts. Last error: ${lastCleanupError.message}. Unparseable text:`,
             {
-              rawText: text,
-              initialCleanedString: cleanedJsonString,
-              cleanupErrorMessage: cleanupError.message,
+              finalCleanedText: cleanedText,
+              cleanupErrorMessage: lastCleanupError.message,
             },
           );
-          // If LLM cleanup fails or the result is still unparseable, throw the original error
           throw new InternalServerErrorException(
-            'Failed to parse predictions from AI response after initial cleaning and LLM cleanup attempt.',
+            `Failed to parse predictions from AI response after ${maxCleanupAttempts} LLM cleanup attempts.`,
           );
         }
       }
