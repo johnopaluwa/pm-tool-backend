@@ -4,6 +4,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
+import * as crypto from 'crypto'; // Import the crypto module
 import { PredictionReviewsService } from '../prediction-reviews/prediction-reviews/prediction-reviews.service'; // Import PredictionReviewsService for types
 import { ProjectsService } from '../projects/projects.service'; // Import ProjectsService for types
 import { SupabaseMapper } from '../supabase/supabase-mapper'; // Import the mapper
@@ -66,12 +67,15 @@ export class ReportsService {
         }
       });
 
+      const newReportId = crypto.randomUUID(); // Generate UUID for overall report
+
       // Persist overall report data
       const { data: insertedOverallReport, error: insertOverallError } =
         await this.supabase
           .from('reports')
           .insert([
             {
+              id: newReportId, // Include the generated ID
               completion_rate: completionRate,
               status_distribution: statusDistribution,
             },
@@ -101,7 +105,7 @@ export class ReportsService {
     }
   }
 
-  async generateProjectReports(projectId: number): Promise<{
+  async generateProjectReports(projectId: string): Promise<{
     predictionsCount: number;
     predictionTypeDistribution: { [type: string]: number };
   }> {
@@ -139,12 +143,15 @@ export class ReportsService {
         });
       }
 
+      const newReportId = crypto.randomUUID(); // Generate UUID for project report
+
       // Persist project report data
       const { data: insertedProjectReport, error: insertProjectError } =
         await this.supabase
           .from('reports')
           .insert([
             {
+              id: newReportId, // Include the generated ID
               project_id: projectId,
               predictions_count: predictionsCount,
               prediction_type_distribution: predictionTypeDistribution,
@@ -188,13 +195,13 @@ export class ReportsService {
     return reports.statusDistribution;
   }
 
-  async getPredictionsCountForProject(projectId: number): Promise<number> {
+  async getPredictionsCountForProject(projectId: string): Promise<number> {
     const reports = await this.generateProjectReports(projectId);
     return reports.predictionsCount;
   }
 
   async getPredictionTypeDistributionForProject(
-    projectId: number,
+    projectId: string,
   ): Promise<{ [type: string]: number }> {
     const reports = await this.generateProjectReports(projectId);
     return reports.predictionTypeDistribution;
@@ -233,7 +240,7 @@ export class ReportsService {
     }
   }
 
-  async getProjectReport(projectId: number): Promise<any | undefined> {
+  async getProjectReport(projectId: string): Promise<any | undefined> {
     try {
       const { data, error } = await this.supabase
         .from('reports')

@@ -21,7 +21,7 @@ export class ReportsController {
   async generateProjectReports(
     @Param('projectId') projectId: string,
   ): Promise<{ status: string }> {
-    await this.reportsService.generateProjectReports(+projectId);
+    await this.reportsService.generateProjectReports(projectId);
     return {
       status: `Project report generation triggered for project ${projectId}`,
     };
@@ -38,6 +38,6 @@ export class ReportsController {
   async getProjectReport(
     @Param('projectId') projectId: string,
   ): Promise<any | undefined> {
-    return this.reportsService.getProjectReport(+projectId);
+    return this.reportsService.getProjectReport(projectId);
   }
 }

@@ -11,7 +11,7 @@ import { SupabaseService } from '../../supabase/supabase.service';
 
 export interface PredictionReview {
   id: string; // Supabase will generate UUID
-  projectId: number; // Link to the project
+  projectId: string; // Link to the project
   projectName: string;
   clientName?: string;
   generatedAt: string; // Store as ISO string
@@ -158,7 +158,7 @@ export class PredictionReviewsService {
   }
 
   async getPredictionReviewsByProjectId(
-    projectId: number,
+    projectId: string,
   ): Promise<PredictionReview[]> {
     const { data: reviews, error: reviewsError } = await this.supabase
       .from('prediction_reviews')

@@ -14,12 +14,13 @@ export class ProjectsController {
 
   @Get(':id')
   findOne(@Param('id') id: string) {
-    return this.projectsService.getProjectById(+id);
+    return this.projectsService.getProjectById(id);
   }
 
   @Post()
-  create(@Body() createProjectDto: CreateProjectDto) {
-    return this.projectsService.addProject(createProjectDto);
+  async create(@Body() createProjectDto: CreateProjectDto) {
+    const projectId = await this.projectsService.addProject(createProjectDto);
+    return { id: projectId }; // Return the ID within a JSON object
   }
   @Patch(':id/status')
   updateStatus(
@@ -27,13 +28,13 @@ export class ProjectsController {
     @Body() updateProjectStatusDto: UpdateProjectStatusDto,
   ) {
     return this.projectsService.updateProjectStatus(
-      +id,
+      id,
       updateProjectStatusDto.status,
     );
   }
 
   @Patch(':id/mark-report-generated')
   markReportGenerated(@Param('id') id: string) {
-    return this.projectsService.markReportGenerated(+id); // Convert id to number
+    return this.projectsService.markReportGenerated(id);
   }
 }

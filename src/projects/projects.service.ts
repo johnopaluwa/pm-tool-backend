@@ -4,11 +4,12 @@ import {
   Logger,
 } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
+import * as crypto from 'crypto'; // Import the crypto module
 import { SupabaseMapper } from '../supabase/supabase-mapper'; // Import the mapper
 import { SupabaseService } from '../supabase/supabase.service';
 
 export interface Project {
-  id: number;
+  id: string;
   name: string;
   client: string;
   status: 'new' | 'predicting' | 'completed';
@@ -42,7 +43,7 @@ export class ProjectsService {
       : []; // Use mapper
   }
 
-  async getProjectById(id: number): Promise<Project | undefined> {
+  async getProjectById(id: string): Promise<Project | undefined> {
     const { data, error } = await this.supabase
       .from('projects')
       .select('*')
@@ -60,9 +61,12 @@ export class ProjectsService {
       projectName: string;
       clientName: string;
     },
-  ): Promise<number> {
+  ): Promise<string> {
+    const newProjectId = crypto.randomUUID(); // Generate UUID
+
     const newProject = SupabaseMapper.toSupabaseProject({
       // Use mapper
+      id: newProjectId, // Include the generated ID
       name: project.projectName,
       client: project.clientName,
       status: 'new', // New projects start with status 'new'
@@ -105,7 +109,7 @@ export class ProjectsService {
   }
 
   async updateProjectStatus(
-    id: number,
+    id: string,
     status: 'new' | 'predicting' | 'completed',
   ): Promise<Project | undefined> {
     const { data, error } = await this.supabase
@@ -128,7 +132,7 @@ export class ProjectsService {
     return undefined;
   }
 
-  async markReportGenerated(id: number): Promise<Project | undefined> {
+  async markReportGenerated(id: string): Promise<Project | undefined> {
     const { data, error } = await this.supabase
       .from('projects')
       .update({ reportGenerated: true })

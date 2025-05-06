@@ -13,7 +13,7 @@ export class ProjectsController {
 
   @Get(':id')
   findOne(@Param('id') id: string) {
-    return this.projectsService.getProjectById(+id);
+    return this.projectsService.getProjectById(id);
   }
 
   @Post()

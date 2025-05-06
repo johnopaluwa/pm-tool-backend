@@ -115,6 +115,7 @@ export class SupabaseMapper {
    */
   static toSupabaseProject(project: Partial<Project>): any {
     return {
+      id: project.id, // Include the id field
       name: project.name,
       client: project.client,
       status: project.status,
@@ -144,7 +145,7 @@ export class SupabaseMapper {
 
     return {
       id: data.id,
-      projectId: data.projectId,
+      projectId: data.projectId as string,
       projectName: data.projectName,
       clientName: data.clientName,
       generatedAt: data.generatedAt,

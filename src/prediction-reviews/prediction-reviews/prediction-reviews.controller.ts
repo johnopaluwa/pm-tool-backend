@@ -29,7 +29,7 @@ export class PredictionReviewsController {
     @Param('projectId') projectId: string,
   ): Promise<PredictionReview[]> {
     return await this.predictionReviewsService.getPredictionReviewsByProjectId(
-      +projectId,
+      projectId,
     );
   }
 

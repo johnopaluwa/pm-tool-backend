@@ -52,7 +52,7 @@ export class PredictionsService {
 
   async generatePredictions(
     projectData: any,
-    projectId: number,
+    projectId: string,
   ): Promise<Prediction[]> {
     console.log(
       `Generating predictions for project ID: ${projectId}`,
@@ -480,7 +480,7 @@ ${cleanedText}
 
   async generateAndSavePredictionReview(
     projectData: any, // Assuming projectData contains projectName and clientName
-    projectId: number,
+    projectId: string,
   ): Promise<PredictionReview> {
     try {
       // 1. Generate predictions
@@ -527,7 +527,7 @@ ${cleanedText}
     return { success: true };
   }
 
-  async getPredictionHistory(projectId: number): Promise<Prediction[]> {
+  async getPredictionHistory(projectId: string): Promise<Prediction[]> {
     console.log(`Fetching prediction history for project ID: ${projectId}`);
     const { data, error } = await this.supabase
       .from('predictions')

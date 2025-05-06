@@ -13,7 +13,7 @@ export class PredictionsController {
     @Body() projectData: any,
   ): Promise<Prediction[]> {
     // Updated return type to Promise and added projectId parameter
-    return this.predictionsService.generatePredictions(projectData, +projectId);
+    return this.predictionsService.generatePredictions(projectData, projectId);
   }
 
   @Post('generate-and-review/:projectId')
@@ -23,7 +23,7 @@ export class PredictionsController {
   ): Promise<PredictionReview> {
     return this.predictionsService.generateAndSavePredictionReview(
       projectData,
-      +projectId,
+      projectId,
     );
   }
 
@@ -37,6 +37,6 @@ export class PredictionsController {
   async getPredictionHistory(
     @Param('projectId') projectId: string,
   ): Promise<Prediction[]> {
-    return this.predictionsService.getPredictionHistory(+projectId); // Convert projectId to number
+    return this.predictionsService.getPredictionHistory(projectId);
   }
 }
