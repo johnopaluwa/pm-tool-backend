@@ -169,6 +169,11 @@ export class ReportsService {
       }
 
       console.log(`Reports generated and persisted for project ${projectId}.`);
+
+      // Mark the project report as generated
+      await this.projectsService.markReportGenerated(projectId);
+      console.log(`Project ${projectId} marked as report generated.`);
+
       return { predictionsCount, predictionTypeDistribution };
     } catch (error: any) {
       this.logger.error(
