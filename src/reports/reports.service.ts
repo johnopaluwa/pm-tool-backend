@@ -232,15 +232,38 @@ export class ReportsService {
         throw new InternalServerErrorException(error.message);
       }
 
+      // If no overall report is found, generate one and return it
+      if (!data) {
+        this.logger.log('No overall report found, generating a new one.');
+        const generatedReport = await this.generateOverallReports();
+        // Fetch the newly generated report from the database to ensure consistency
+        const { data: newData, error: newError } = await this.supabase
+          .from('reports')
+          .select('completion_rate, status_distribution')
+          .is('project_id', null)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (newError && newError.code !== 'PGRST116') {
+          this.logger.error(
+            `Error fetching newly generated overall report from Supabase: ${newError.message}`,
+            newError.stack,
+          );
+          throw new InternalServerErrorException(newError.message);
+        }
+        return newData || undefined;
+      }
+
       return data || undefined;
     } catch (error: any) {
       this.logger.error(
-        'Failed to fetch overall report:',
+        'Failed to fetch or generate overall report:',
         error.message,
         error.stack,
       );
       throw new InternalServerErrorException(
-        `Failed to fetch overall report: ${error.message}`,
+        `Failed to fetch or generate overall report: ${error.message}`,
       );
     }
   }
