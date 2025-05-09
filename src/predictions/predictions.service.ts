@@ -217,7 +217,7 @@ Provide the output as a JSON array of objects, where each object has the followi
   "relatedIssues": string[] // REQUIRED: List of related issue IDs
 }
 
-Ensure the JSON is valid and can be directly parsed. Generate at least 3 user stories and 2 bugs that are relevant to the new project based on its characteristics and the provided historical data.`;
+Ensure the JSON is valid and can be directly parsed. Generate all relevant potential user stories and bugs for the new project based on its characteristics and the provided historical data.`;
 
     try {
       const completion = await this.openai.chat.completions.create({
