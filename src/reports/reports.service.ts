@@ -83,6 +83,8 @@ export class ReportsService {
     let totalPredictionsCount: number = 0;
     let averagePredictionsPerProject: number = 0;
 
+    this.logger.log('Starting overall report generation.'); // Log at the beginning
+
     try {
       // Fetch necessary data from Supabase
       const { data: projectsData, error: projectsError } = await this.supabase
@@ -162,7 +164,7 @@ Provide the output as a JSON object with the following structure:
 
 Ensure the JSON is valid and can be directly parsed.`;
 
-      this.logger.log('Calling LLM for overall reports...');
+      this.logger.log('Calling LLM for overall reports...'); // Log before LLM call
       const completion = await this.openai.chat.completions.create({
         model: 'google/gemini-2.5-flash-preview:thinking', // Use the specified OpenRouter model
         messages: [
@@ -176,7 +178,7 @@ Ensure the JSON is valid and can be directly parsed.`;
       const text = completion.choices[0].message.content;
 
       this.logger.log(
-        'OpenRouter API response text for overall reports:',
+        'LLM call completed for overall reports. Response text:', // Log after LLM call
         text,
       );
 
@@ -419,7 +421,7 @@ ${cleanedText}
       };
     } catch (error: any) {
       this.logger.error(
-        'Failed to generate overall reports:',
+        'Error during overall report generation:', // Log in catch block
         error.message,
         error.stack,
       );
@@ -804,6 +806,13 @@ ${cleanedText}
       console.log(
         `Project reports generated and persisted for project ${projectId}.`,
       );
+
+      // Generate overall reports after project report is generated
+      await this.generateOverallReports();
+      this.logger.log(
+        'Overall reports regenerated after project report generation.',
+      );
+
       // Mark the project as having a generated report
       await this.projectsService.markReportGenerated(projectId);
       return {

@@ -6,14 +6,10 @@ export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
 
   @Post('generate/overall')
-  @Post('generate/overall')
   async generateOverallReports(): Promise<{ status: string }> {
-    // Reports are now generated on the fly when requested via GET endpoints
-    // This endpoint can be kept to trigger a regeneration if needed, but the GET endpoints are the primary way to get reports
-    // For now, we'll just return a success status indicating the capability exists
+    await this.reportsService.generateOverallReports(); // Call the service method
     return {
-      status:
-        'Overall report generation triggered (reports are generated on demand via GET endpoints)',
+      status: 'Overall report generation triggered and completed.', // Updated status message
     };
   }
 
