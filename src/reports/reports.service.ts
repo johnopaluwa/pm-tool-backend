@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import * as crypto from 'crypto'; // Import the crypto module
+import OpenAI from 'openai'; // Import OpenAI
 import { PredictionReviewsService } from '../prediction-reviews/prediction-reviews/prediction-reviews.service'; // Import PredictionReviewsService for types
 import { ProjectsService } from '../projects/projects.service'; // Import ProjectsService for types
 import { SupabaseMapper } from '../supabase/supabase-mapper'; // Import the mapper
@@ -12,6 +13,7 @@ import { SupabaseService } from '../supabase/supabase.service';
 
 @Injectable()
 export class ReportsService {
+  private openai: OpenAI; // Add openai property
   private supabase: SupabaseClient;
   private readonly logger = new Logger(ReportsService.name);
 
@@ -20,14 +22,51 @@ export class ReportsService {
     private readonly projectsService: ProjectsService, // Keep for type hinting if needed, though direct Supabase calls are preferred
     private readonly predictionReviewsService: PredictionReviewsService, // Keep for type hinting if needed
   ) {
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    const siteUrl = process.env.OPENROUTER_SITE_URL || ''; // Optional
+    const siteName = process.env.OPENROUTER_SITE_NAME || ''; // Optional
+
+    if (!apiKey) {
+      throw new InternalServerErrorException(
+        'OPENROUTER_API_KEY environment variable is not set.',
+      );
+    }
+
+    this.openai = new OpenAI({
+      baseURL: 'https://openrouter.ai/api/v1',
+      apiKey: apiKey,
+      defaultHeaders: {
+        'HTTP-Referer': siteUrl,
+        'X-Title': siteName,
+      },
+    });
+
     this.supabase = this.supabaseService.getClient();
   }
 
+  /**
+   * Generates overall reports using an LLM.
+   * This method fetches necessary data and sends it to a placeholder LLM integration.
+   * TODO: Replace placeholder LLM integration with actual LLM API calls.
+   */
   async generateOverallReports(): Promise<{
     completionRate: number;
     statusDistribution: { [status: string]: number };
   }> {
+    let llmResponse: {
+      completionRate: number;
+      statusDistribution: { [status: string]: number };
+    };
+    let completionRate: number = 0; // Initialize with default value
+    let statusDistribution: { [status: string]: number } = {
+      // Initialize with default distribution
+      new: 0,
+      predicting: 0,
+      completed: 0,
+    };
+
     try {
+      // Fetch necessary data from Supabase
       const { data: projectsData, error } = await this.supabase
         .from('projects')
         .select('*'); // Select all to use mapper
@@ -44,28 +83,217 @@ export class ReportsService {
         ? projectsData.map((item) => SupabaseMapper.fromSupabaseProject(item))
         : []; // Use mapper
 
-      if (!projects || projects.length === 0) {
-        return {
-          completionRate: 0,
-          statusDistribution: { new: 0, predicting: 0, completed: 0 },
-        };
+      // Prepare data for the LLM
+      const dataForLlm = {
+        projects: projects,
+      };
+
+      // Formulate the prompt for overall reports
+      const overallReportPrompt = `YOUR RESPONSE MUST BE A VALID JSON OBJECT. DO NOT INCLUDE ANY INTRODUCTORY OR CONCLUDING TEXT, EXPLANATIONS, OR MARKDOWN FORMATTING. SPECIFICALLY, DO NOT INCLUDE \`\`\`json\` OR \`\`\` AT THE BEGINNING OR END OF THE RESPONSE. PROVIDE ONLY THE JSON OBJECT.
+
+Analyze the following project data to generate an overall report including the project completion rate and the distribution of projects by status.
+
+Project Data:
+${JSON.stringify(projects, null, 2)}
+
+Provide the output as a JSON object with the following structure:
+{
+  "completionRate": number, // Percentage of projects with status 'completed'
+  "statusDistribution": { // Distribution of projects by status
+    "new": number,
+    "predicting": number,
+    "completed": number,
+    // ... other statuses if any
+  }
+}
+
+Ensure the JSON is valid and can be directly parsed.`;
+
+      this.logger.log('Calling LLM for overall reports...');
+      const completion = await this.openai.chat.completions.create({
+        model: 'google/gemini-2.5-flash-preview:thinking', // Use the specified OpenRouter model
+        messages: [
+          {
+            role: 'user',
+            content: overallReportPrompt,
+          },
+        ],
+      });
+
+      const text = completion.choices[0].message.content;
+
+      this.logger.log(
+        'OpenRouter API response text for overall reports:',
+        text,
+      );
+
+      if (text === null) {
+        throw new InternalServerErrorException(
+          'AI response content was null for overall reports.',
+        );
       }
 
-      const completedProjects = projects.filter(
-        (project) => project.status === 'completed',
-      );
-      const completionRate = (completedProjects.length / projects.length) * 100;
+      let cleanedJsonString = text;
 
-      const statusDistribution: { [status: string]: number } = {
-        new: 0,
-        predicting: 0,
-        completed: 0,
-      };
-      projects.forEach((project) => {
-        if (statusDistribution[project.status] !== undefined) {
-          statusDistribution[project.status]++;
+      // Remove markdown code block fences and any surrounding whitespace
+      cleanedJsonString = cleanedJsonString.replace(
+        /^[\s]*```(?:json)?[\s]*/,
+        '',
+      );
+      cleanedJsonString = cleanedJsonString.replace(/[\s]*```[\s]*$/, '');
+
+      // Find the first '{' and last '}' to extract the core JSON object
+      const startIndex = cleanedJsonString.indexOf('{');
+      const endIndex = cleanedJsonString.lastIndexOf('}');
+
+      if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
+        this.logger.error(
+          'Could not find valid JSON object structure in AI response for overall reports after initial cleaning. Raw text:',
+          text,
+        );
+        throw new InternalServerErrorException(
+          'AI response for overall reports did not contain a valid JSON object.',
+        );
+      }
+
+      // Extract the substring containing the JSON object
+      cleanedJsonString = cleanedJsonString.substring(startIndex, endIndex + 1);
+
+      // Remove all non-printable ASCII characters except common whitespace (tabs, newlines, carriage returns)
+      cleanedJsonString = cleanedJsonString.replace(
+        /[^\x20-\x7E\x09\x0A\x0D]/g,
+        '',
+      );
+
+      // Remove trailing commas within arrays or objects
+      cleanedJsonString = cleanedJsonString.replace(/,\s*([\]}])/g, '$1');
+      cleanedJsonString = cleanedJsonString.replace(/,\s*\]/g, ']'); // Specific for arrays
+
+      // Remove leading/trailing whitespace
+      cleanedJsonString = cleanedJsonString.trim();
+
+      // Log the cleaned string before parsing for debugging
+      this.logger.debug(
+        `Attempting to parse cleaned JSON string for overall reports: ${cleanedJsonString}`,
+      );
+
+      try {
+        llmResponse = JSON.parse(cleanedJsonString);
+        this.logger.log(
+          'Successfully parsed JSON string after cleaning for overall reports.',
+          {
+            cleanedString: cleanedJsonString,
+          },
+        );
+        completionRate = llmResponse.completionRate;
+        statusDistribution = llmResponse.statusDistribution;
+      } catch (parseError: any) {
+        this.logger.warn(
+          `Initial parsing of cleaned JSON string failed for overall reports. Attempting LLM-based cleanup. Error: ${parseError.message}`,
+          {
+            extractedString: text,
+            cleanedString: cleanedJsonString,
+            rawText: text,
+            parseErrorMessage: parseError.message,
+          },
+        );
+
+        let cleanupAttempts = 0;
+        const maxCleanupAttempts = 20;
+        let lastCleanupError: any = parseError;
+        let cleanedText: string | null = cleanedJsonString; // Start with the initially cleaned string
+
+        while (cleanupAttempts < maxCleanupAttempts) {
+          cleanupAttempts++;
+          this.logger.debug(
+            `Attempting LLM cleanup for overall reports (Attempt ${cleanupAttempts}/${maxCleanupAttempts})`,
+          );
+
+          const cleanupPrompt = `The following text failed to parse as a JSON object after initial cleaning. It was intended to be a JSON object following the structure provided below. Your task is to correct any syntax errors, missing commas, incorrect formatting, or extraneous characters to produce a VALID JSON object.
+
+Provide ONLY the corrected JSON object. DO NOT include any introductory or concluding text, explanations, or markdown formatting (like \`\`\`json\` or \`\`\`). The output must be a directly parseable JSON object.
+
+Previous parsing error: ${lastCleanupError.message}
+
+Expected JSON structure:
+{
+  "completionRate": number, // Percentage of projects with status 'completed'
+  "statusDistribution": { // Distribution of projects by status
+    "new": number,
+    "predicting": number,
+    "completed": number,
+    // ... other statuses if any
+  }
+}
+
+Text to clean and format:
+${cleanedText}
+`;
+
+          try {
+            const cleanupCompletion = await this.openai.chat.completions.create(
+              {
+                model: 'google/gemini-2.5-flash-preview:thinking', // Use the specified OpenRouter model
+                messages: [
+                  {
+                    role: 'user',
+                    content: cleanupPrompt,
+                  },
+                ],
+              },
+            );
+
+            cleanedText = cleanupCompletion.choices[0].message.content;
+            this.logger.debug(
+              `LLM cleanup response text for overall reports (Attempt ${cleanupAttempts}): ${cleanedText}`,
+            );
+
+            if (cleanedText === null) {
+              this.logger.error(
+                `LLM cleanup response content was null for overall reports (Attempt ${cleanupAttempts}).`,
+              );
+              lastCleanupError = new Error(
+                'LLM cleanup response content was null for overall reports.',
+              );
+              continue; // Continue to the next attempt
+            }
+
+            // Attempt to parse the cleaned text from the LLM
+            llmResponse = JSON.parse(cleanedText);
+            this.logger.debug(
+              `Successfully parsed JSON string after LLM cleanup for overall reports (Attempt ${cleanupAttempts}).`,
+            );
+            completionRate = llmResponse.completionRate;
+            statusDistribution = llmResponse.statusDistribution;
+            break; // Exit the loop if parsing is successful
+          } catch (cleanupError: any) {
+            this.logger.warn(
+              `LLM cleanup failed or the cleaned text is still not valid JSON for overall reports (Attempt ${cleanupAttempts}): ${cleanupError.message}`,
+              {
+                rawText: text,
+                initialCleanedString: cleanedJsonString,
+                cleanupErrorMessage: cleanupError.message,
+              },
+            );
+            lastCleanupError = cleanupError; // Update the last error for the next prompt
+            // Continue to the next attempt
+          }
         }
-      });
+
+        // If after max attempts, parsing is still not successful, throw a final error
+        if (cleanupAttempts === maxCleanupAttempts) {
+          this.logger.error(
+            `Failed to parse overall reports after ${maxCleanupAttempts} LLM cleanup attempts. Last error: ${lastCleanupError.message}. Unparseable text:`,
+            {
+              finalCleanedText: cleanedText,
+              cleanupErrorMessage: lastCleanupError.message,
+            },
+          );
+          throw new InternalServerErrorException(
+            `Failed to parse overall reports from AI response after ${maxCleanupAttempts} LLM cleanup attempts.`,
+          );
+        }
+      }
 
       const newReportId = crypto.randomUUID(); // Generate UUID for overall report
 
@@ -105,11 +333,28 @@ export class ReportsService {
     }
   }
 
+  /**
+   * Generates project-specific reports using an LLM.
+   * This method fetches necessary data and sends it to a placeholder LLM integration.
+   * TODO: Replace placeholder LLM integration with actual LLM API calls.
+   */
   async generateProjectReports(projectId: string): Promise<{
     predictionsCount: number;
     predictionTypeDistribution: { [type: string]: number };
   }> {
+    let llmResponse: {
+      predictionsCount: number;
+      predictionTypeDistribution: { [type: string]: number };
+    };
+    let predictionsCount: number = 0; // Initialize with default value
+    let predictionTypeDistribution: { [type: string]: number } = {
+      // Initialize with default distribution
+      'user-story': 0,
+      bug: 0,
+    };
+
     try {
+      // Fetch necessary data from Supabase
       const { data: predictionsData, error } = await this.supabase
         .from('predictions')
         .select('*, prediction_reviews!inner(projectId)') // Select predictions columns and join with prediction_reviews to get projectId
@@ -129,18 +374,215 @@ export class ReportsService {
           )
         : []; // Use mapper
 
-      const predictionsCount = predictions ? predictions.length : 0;
-
-      const predictionTypeDistribution: { [type: string]: number } = {
-        'user-story': 0,
-        bug: 0,
+      // Prepare data for the LLM
+      const dataForLlm = {
+        projectId: projectId,
+        predictions: predictions,
       };
-      if (predictions) {
-        predictions.forEach((prediction) => {
-          if (predictionTypeDistribution[prediction.type] !== undefined) {
-            predictionTypeDistribution[prediction.type]++;
+
+      // Formulate the prompt for project reports
+      const projectReportPrompt = `YOUR RESPONSE MUST BE A VALID JSON OBJECT. DO NOT INCLUDE ANY INTRODUCTORY OR CONCLUDING TEXT, EXPLANATIONS, OR MARKDOWN FORMATTING. SPECIFICALLY, DO NOT INCLUDE \`\`\`json\` OR \`\`\` AT THE BEGINNING OR END OF THE RESPONSE. PROVIDE ONLY THE JSON OBJECT.
+
+Analyze the following prediction data for project ID "${projectId}" to generate a project-specific report including the total count of predictions and the distribution of prediction types (user stories vs. bugs).
+
+Prediction Data:
+${JSON.stringify(predictions, null, 2)}
+
+Provide the output as a JSON object with the following structure:
+{
+  "predictionsCount": number, // Total number of predictions for this project
+  "predictionTypeDistribution": { // Distribution of prediction types
+    "user-story": number,
+    "bug": number
+  }
+}
+
+Ensure the JSON is valid and can be directly parsed.`;
+
+      this.logger.log(
+        `Calling LLM for project reports for project ${projectId}...`,
+      );
+      const completion = await this.openai.chat.completions.create({
+        model: 'google/gemini-2.5-flash-preview:thinking', // Use the specified OpenRouter model
+        messages: [
+          {
+            role: 'user',
+            content: projectReportPrompt,
+          },
+        ],
+      });
+
+      const text = completion.choices[0].message.content;
+
+      this.logger.log(
+        `OpenRouter API response text for project reports for project ${projectId}:`,
+        text,
+      );
+
+      if (text === null) {
+        throw new InternalServerErrorException(
+          `AI response content was null for project reports for project ${projectId}.`,
+        );
+      }
+
+      let cleanedJsonString = text;
+
+      // Remove markdown code block fences and any surrounding whitespace
+      cleanedJsonString = cleanedJsonString.replace(
+        /^[\s]*```(?:json)?[\s]*/,
+        '',
+      );
+      cleanedJsonString = cleanedJsonString.replace(/[\s]*```[\s]*$/, '');
+
+      // Find the first '{' and last '}' to extract the core JSON object
+      const startIndex = cleanedJsonString.indexOf('{');
+      const endIndex = cleanedJsonString.lastIndexOf('}');
+
+      if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
+        this.logger.error(
+          `Could not find valid JSON object structure in AI response for project reports for project ${projectId} after initial cleaning. Raw text:`,
+          text,
+        );
+        throw new InternalServerErrorException(
+          `AI response for project reports for project ${projectId} did not contain a valid JSON object.`,
+        );
+      }
+
+      // Extract the substring containing the JSON object
+      cleanedJsonString = cleanedJsonString.substring(startIndex, endIndex + 1);
+
+      // Remove all non-printable ASCII characters except common whitespace (tabs, newlines, carriage returns)
+      cleanedJsonString = cleanedJsonString.replace(
+        /[^\x20-\x7E\x09\x0A\x0D]/g,
+        '',
+      );
+
+      // Remove trailing commas within arrays or objects
+      cleanedJsonString = cleanedJsonString.replace(/,\s*([\]}])/g, '$1');
+      cleanedJsonString = cleanedJsonString.replace(/,\s*\]/g, ']'); // Specific for arrays
+
+      // Remove leading/trailing whitespace
+      cleanedJsonString = cleanedJsonString.trim();
+
+      // Log the cleaned string before parsing for debugging
+      this.logger.debug(
+        `Attempting to parse cleaned JSON string for project reports for project ${projectId}: ${cleanedJsonString}`,
+      );
+
+      try {
+        llmResponse = JSON.parse(cleanedJsonString);
+        this.logger.log(
+          `Successfully parsed JSON string after cleaning for project reports for project ${projectId}.`,
+          {
+            cleanedString: cleanedJsonString,
+          },
+        );
+        predictionsCount = llmResponse.predictionsCount;
+        predictionTypeDistribution = llmResponse.predictionTypeDistribution;
+      } catch (parseError: any) {
+        this.logger.warn(
+          `Initial parsing of cleaned JSON string failed for project reports for project ${projectId}. Attempting LLM-based cleanup. Error: ${parseError.message}`,
+          {
+            extractedString: text,
+            cleanedString: cleanedJsonString,
+            rawText: text,
+            parseErrorMessage: parseError.message,
+          },
+        );
+
+        let cleanupAttempts = 0;
+        const maxCleanupAttempts = 20;
+        let lastCleanupError: any = parseError;
+        let cleanedText: string | null = cleanedJsonString; // Start with the initially cleaned string
+
+        while (cleanupAttempts < maxCleanupAttempts) {
+          cleanupAttempts++;
+          this.logger.debug(
+            `Attempting LLM cleanup for project reports for project ${projectId} (Attempt ${cleanupAttempts}/${maxCleanupAttempts})`,
+          );
+
+          const cleanupPrompt = `The following text failed to parse as a JSON object after initial cleaning. It was intended to be a JSON object following the structure provided below. Your task is to correct any syntax errors, missing commas, incorrect formatting, or extraneous characters to produce a VALID JSON object.
+
+Provide ONLY the corrected JSON object. DO NOT include any introductory or concluding text, explanations, or markdown formatting (like \`\`\`json\` or \`\`\`). The output must be a directly parseable JSON object.
+
+Previous parsing error: ${lastCleanupError.message}
+
+Expected JSON structure:
+{
+  "predictionsCount": number, // Total number of predictions for this project
+  "predictionTypeDistribution": { // Distribution of prediction types
+    "user-story": number,
+    "bug": number
+  }
+}
+
+Text to clean and format:
+${cleanedText}
+`;
+
+          try {
+            const cleanupCompletion = await this.openai.chat.completions.create(
+              {
+                model: 'google/gemini-2.5-flash-preview:thinking', // Use the specified OpenRouter model
+                messages: [
+                  {
+                    role: 'user',
+                    content: cleanupPrompt,
+                  },
+                ],
+              },
+            );
+
+            cleanedText = cleanupCompletion.choices[0].message.content;
+            this.logger.debug(
+              `LLM cleanup response text for project reports for project ${projectId} (Attempt ${cleanupAttempts}): ${cleanedText}`,
+            );
+
+            if (cleanedText === null) {
+              this.logger.error(
+                `LLM cleanup response content was null for project reports for project ${projectId} (Attempt ${cleanupAttempts}).`,
+              );
+              lastCleanupError = new Error(
+                `LLM cleanup response content was null for project reports for project ${projectId}.`,
+              );
+              continue; // Continue to the next attempt
+            }
+
+            // Attempt to parse the cleaned text from the LLM
+            llmResponse = JSON.parse(cleanedText);
+            this.logger.debug(
+              `Successfully parsed JSON string after LLM cleanup for project reports for project ${projectId} (Attempt ${cleanupAttempts}).`,
+            );
+            predictionsCount = llmResponse.predictionsCount;
+            predictionTypeDistribution = llmResponse.predictionTypeDistribution;
+            break; // Exit the loop if parsing is successful
+          } catch (cleanupError: any) {
+            this.logger.warn(
+              `LLM cleanup failed or the cleaned text is still not valid JSON for project reports for project ${projectId} (Attempt ${cleanupAttempts}): ${cleanupError.message}`,
+              {
+                rawText: text,
+                initialCleanedString: cleanedJsonString,
+                cleanupErrorMessage: cleanupError.message,
+              },
+            );
+            lastCleanupError = cleanupError; // Update the last error for the next prompt
+            // Continue to the next attempt
           }
-        });
+        }
+
+        // If after max attempts, parsing is still not successful, throw a final error
+        if (cleanupAttempts === maxCleanupAttempts) {
+          this.logger.error(
+            `Failed to parse project reports for project ${projectId} after ${maxCleanupAttempts} LLM cleanup attempts. Last error: ${lastCleanupError.message}. Unparseable text:`,
+            {
+              finalCleanedText: cleanedText,
+              cleanupErrorMessage: lastCleanupError.message,
+            },
+          );
+          throw new InternalServerErrorException(
+            `Failed to parse project reports for project ${projectId} from AI response after ${maxCleanupAttempts} LLM cleanup attempts.`,
+          );
+        }
       }
 
       const newReportId = crypto.randomUUID(); // Generate UUID for project report
@@ -162,7 +604,7 @@ export class ReportsService {
 
       if (insertProjectError) {
         this.logger.error(
-          `Error inserting project report into Supabase: ${insertProjectError.message}`,
+          `Error inserting project report into Supabase: ${(insertProjectError as any).message}`,
           insertProjectError.stack,
         );
         // Do not throw an error here, just log it, as the report was generated
