@@ -52,10 +52,22 @@ export class ReportsService {
   async generateOverallReports(): Promise<{
     completionRate: number;
     statusDistribution: { [status: string]: number };
+    projectTypeDistribution: { [type: string]: number };
+    clientIndustryDistribution: { [industry: string]: number };
+    teamSizeDistribution: { [size: string]: number };
+    durationDistribution: { [duration: string]: number };
+    totalPredictionsCount: number;
+    averagePredictionsPerProject: number;
   }> {
     let llmResponse: {
       completionRate: number;
       statusDistribution: { [status: string]: number };
+      projectTypeDistribution: { [type: string]: number };
+      clientIndustryDistribution: { [industry: string]: number };
+      teamSizeDistribution: { [size: string]: number };
+      durationDistribution: { [duration: string]: number };
+      totalPredictionsCount: number;
+      averagePredictionsPerProject: number;
     };
     let completionRate: number = 0; // Initialize with default value
     let statusDistribution: { [status: string]: number } = {
@@ -64,37 +76,64 @@ export class ReportsService {
       predicting: 0,
       completed: 0,
     };
+    let projectTypeDistribution: { [type: string]: number } = {};
+    let clientIndustryDistribution: { [industry: string]: number } = {};
+    let teamSizeDistribution: { [size: string]: number } = {};
+    let durationDistribution: { [duration: string]: number } = {};
+    let totalPredictionsCount: number = 0;
+    let averagePredictionsPerProject: number = 0;
 
     try {
       // Fetch necessary data from Supabase
-      const { data: projectsData, error } = await this.supabase
+      const { data: projectsData, error: projectsError } = await this.supabase
         .from('projects')
         .select('*'); // Select all to use mapper
 
-      if (error) {
+      if (projectsError) {
         this.logger.error(
-          `Error fetching projects for overall reports from Supabase: ${error.message}`,
-          error.stack,
+          `Error fetching projects for overall reports from Supabase: ${projectsError.message}`,
+          projectsError.stack,
         );
-        throw new InternalServerErrorException(error.message);
+        throw new InternalServerErrorException(projectsError.message);
       }
 
       const projects = projectsData
         ? projectsData.map((item) => SupabaseMapper.fromSupabaseProject(item))
         : []; // Use mapper
 
+      const { data: predictionsData, error: predictionsError } =
+        await this.supabase.from('predictions').select('*'); // Select all predictions
+
+      if (predictionsError) {
+        this.logger.error(
+          `Error fetching predictions for overall reports from Supabase: ${predictionsError.message}`,
+          predictionsError.stack,
+        );
+        // Do not throw an error here, as we can still generate a report without predictions
+      }
+
+      const predictions = predictionsData
+        ? predictionsData.map((item) =>
+            SupabaseMapper.fromSupabasePrediction(item),
+          )
+        : []; // Use mapper
+
       // Prepare data for the LLM
       const dataForLlm = {
         projects: projects,
+        predictions: predictions,
       };
 
       // Formulate the prompt for overall reports
       const overallReportPrompt = `YOUR RESPONSE MUST BE A VALID JSON OBJECT. DO NOT INCLUDE ANY INTRODUCTORY OR CONCLUDING TEXT, EXPLANATIONS, OR MARKDOWN FORMATTING. SPECIFICALLY, DO NOT INCLUDE \`\`\`json\` OR \`\`\` AT THE BEGINNING OR END OF THE RESPONSE. PROVIDE ONLY THE JSON OBJECT.
 
-Analyze the following project data to generate an overall report including the project completion rate and the distribution of projects by status.
+Analyze the following project and prediction data to generate a comprehensive overall report.
 
 Project Data:
 ${JSON.stringify(projects, null, 2)}
+
+Prediction Data:
+${JSON.stringify(predictions, null, 2)}
 
 Provide the output as a JSON object with the following structure:
 {
@@ -102,9 +141,23 @@ Provide the output as a JSON object with the following structure:
   "statusDistribution": { // Distribution of projects by status
     "new": number,
     "predicting": number,
-    "completed": number,
-    // ... other statuses if any
-  }
+    "completed": number
+    // ... other project statuses if any
+  },
+  "projectTypeDistribution": { // Distribution of projects by projectType
+    // e.g., "web": 5, "mobile": 3
+  },
+  "clientIndustryDistribution": { // Distribution of projects by clientIndustry
+    // e.g., "finance": 2, "healthcare": 4
+  },
+  "teamSizeDistribution": { // Distribution of projects by teamSize
+    // e.g., "small": 5, "medium": 3
+  },
+  "durationDistribution": { // Distribution of projects by duration
+    // e.g., "short": 5, "medium": 3
+  },
+  "totalPredictionsCount": number, // Total number of predictions across all projects
+  "averagePredictionsPerProject": number // Average number of predictions per project
 }
 
 Ensure the JSON is valid and can be directly parsed.`;
@@ -187,6 +240,12 @@ Ensure the JSON is valid and can be directly parsed.`;
         );
         completionRate = llmResponse.completionRate;
         statusDistribution = llmResponse.statusDistribution;
+        projectTypeDistribution = llmResponse.projectTypeDistribution;
+        clientIndustryDistribution = llmResponse.clientIndustryDistribution;
+        teamSizeDistribution = llmResponse.teamSizeDistribution;
+        durationDistribution = llmResponse.durationDistribution;
+        totalPredictionsCount = llmResponse.totalPredictionsCount;
+        averagePredictionsPerProject = llmResponse.averagePredictionsPerProject;
       } catch (parseError: any) {
         this.logger.warn(
           `Initial parsing of cleaned JSON string failed for overall reports. Attempting LLM-based cleanup. Error: ${parseError.message}`,
@@ -223,7 +282,21 @@ Expected JSON structure:
     "predicting": number,
     "completed": number,
     // ... other statuses if any
-  }
+  },
+  "projectTypeDistribution": { // Distribution of projects by projectType
+    // e.g., "web": 5, "mobile": 3
+  },
+  "clientIndustryDistribution": { // Distribution of projects by clientIndustry
+    // e.g., "finance": 2, "healthcare": 4
+  },
+  "teamSizeDistribution": { // Distribution of projects by teamSize
+    // e.g., "small": 5, "medium": 3
+  },
+  "durationDistribution": { // Distribution of projects by duration
+    // e.g., "short": 5, "medium": 3
+  },
+  "totalPredictionsCount": number, // Total number of predictions across all projects
+  "averagePredictionsPerProject": number // Average number of predictions per project
 }
 
 Text to clean and format:
@@ -265,6 +338,13 @@ ${cleanedText}
             );
             completionRate = llmResponse.completionRate;
             statusDistribution = llmResponse.statusDistribution;
+            projectTypeDistribution = llmResponse.projectTypeDistribution;
+            clientIndustryDistribution = llmResponse.clientIndustryDistribution;
+            teamSizeDistribution = llmResponse.teamSizeDistribution;
+            durationDistribution = llmResponse.durationDistribution;
+            totalPredictionsCount = llmResponse.totalPredictionsCount;
+            averagePredictionsPerProject =
+              llmResponse.averagePredictionsPerProject;
             break; // Exit the loop if parsing is successful
           } catch (cleanupError: any) {
             this.logger.warn(
@@ -306,6 +386,13 @@ ${cleanedText}
               id: newReportId, // Include the generated ID
               completion_rate: completionRate,
               status_distribution: statusDistribution,
+              project_type_distribution: projectTypeDistribution,
+              client_industry_distribution: clientIndustryDistribution,
+              team_size_distribution: teamSizeDistribution,
+              duration_distribution: durationDistribution,
+              total_predictions_count: totalPredictionsCount,
+              average_predictions_per_project: averagePredictionsPerProject,
+              project_id: null, // Overall report is not linked to a specific project
             },
           ])
           .select('*')
@@ -320,7 +407,16 @@ ${cleanedText}
       }
 
       console.log('Overall reports generated and persisted.');
-      return { completionRate, statusDistribution };
+      return {
+        completionRate,
+        statusDistribution,
+        projectTypeDistribution,
+        clientIndustryDistribution,
+        teamSizeDistribution,
+        durationDistribution,
+        totalPredictionsCount,
+        averagePredictionsPerProject,
+      };
     } catch (error: any) {
       this.logger.error(
         'Failed to generate overall reports:',
@@ -341,10 +437,22 @@ ${cleanedText}
   async generateProjectReports(projectId: string): Promise<{
     predictionsCount: number;
     predictionTypeDistribution: { [type: string]: number };
+    predictionStatusDistribution: { [status: string]: number };
+    predictionPriorityDistribution: { [priority: string]: number };
+    predictionSeverityDistribution: { [severity: string]: number };
+    averageEstimatedTime: number;
+    topKeywords: string[];
+    techStackList: string[];
   }> {
     let llmResponse: {
       predictionsCount: number;
       predictionTypeDistribution: { [type: string]: number };
+      predictionStatusDistribution: { [status: string]: number };
+      predictionPriorityDistribution: { [priority: string]: number };
+      predictionSeverityDistribution: { [severity: string]: number };
+      averageEstimatedTime: number;
+      topKeywords: string[];
+      techStackList: string[];
     };
     let predictionsCount: number = 0; // Initialize with default value
     let predictionTypeDistribution: { [type: string]: number } = {
@@ -352,20 +460,51 @@ ${cleanedText}
       'user-story': 0,
       bug: 0,
     };
+    let predictionStatusDistribution: { [status: string]: number } = {};
+    let predictionPriorityDistribution: { [priority: string]: number } = {};
+    let predictionSeverityDistribution: { [severity: string]: number } = {};
+    let averageEstimatedTime: number = 0;
+    let topKeywords: string[] = [];
+    let techStackList: string[] = [];
 
     try {
       // Fetch necessary data from Supabase
-      const { data: predictionsData, error } = await this.supabase
-        .from('predictions')
-        .select('*, prediction_reviews!inner(projectId)') // Select predictions columns and join with prediction_reviews to get projectId
-        .eq('prediction_reviews.projectId', projectId); // Filter by projectId from prediction_reviews
+      const { data: projectData, error: projectError } = await this.supabase
+        .from('projects')
+        .select('*')
+        .eq('id', projectId)
+        .single();
 
-      if (error) {
+      if (projectError) {
         this.logger.error(
-          `Error fetching predictions for project reports from Supabase: ${error.message}`,
-          error.stack,
+          `Error fetching project ${projectId} for project reports from Supabase: ${projectError.message}`,
+          projectError.stack,
         );
-        throw new InternalServerErrorException(error.message);
+        throw new InternalServerErrorException(projectError.message);
+      }
+
+      const project = projectData
+        ? SupabaseMapper.fromSupabaseProject(projectData)
+        : null;
+
+      if (!project) {
+        throw new InternalServerErrorException(
+          `Project with ID ${projectId} not found.`,
+        );
+      }
+
+      const { data: predictionsData, error: predictionsError } =
+        await this.supabase
+          .from('predictions')
+          .select('*, prediction_reviews!inner(projectId)') // Select predictions columns and join with prediction_reviews to get projectId
+          .eq('prediction_reviews.projectId', projectId); // Filter by projectId from prediction_reviews
+
+      if (predictionsError) {
+        this.logger.error(
+          `Error fetching predictions for project reports from Supabase: ${predictionsError.message}`,
+          predictionsError.stack,
+        );
+        // Do not throw an error here, as we can still generate a report without predictions
       }
 
       const predictions = predictionsData
@@ -376,14 +515,17 @@ ${cleanedText}
 
       // Prepare data for the LLM
       const dataForLlm = {
-        projectId: projectId,
+        project: project,
         predictions: predictions,
       };
 
       // Formulate the prompt for project reports
       const projectReportPrompt = `YOUR RESPONSE MUST BE A VALID JSON OBJECT. DO NOT INCLUDE ANY INTRODUCTORY OR CONCLUDING TEXT, EXPLANATIONS, OR MARKDOWN FORMATTING. SPECIFICALLY, DO NOT INCLUDE \`\`\`json\` OR \`\`\` AT THE BEGINNING OR END OF THE RESPONSE. PROVIDE ONLY THE JSON OBJECT.
 
-Analyze the following prediction data for project ID "${projectId}" to generate a project-specific report including the total count of predictions and the distribution of prediction types (user stories vs. bugs).
+Analyze the following project and prediction data for project ID "${projectId}" to generate a comprehensive project-specific report.
+
+Project Data:
+${JSON.stringify(project, null, 2)}
 
 Prediction Data:
 ${JSON.stringify(predictions, null, 2)}
@@ -394,7 +536,20 @@ Provide the output as a JSON object with the following structure:
   "predictionTypeDistribution": { // Distribution of prediction types
     "user-story": number,
     "bug": number
-  }
+    // ... other prediction types if any
+  },
+  "predictionStatusDistribution": { // Distribution of predictions by status
+    // e.g., "new": 5, "in-progress": 3
+  },
+  "predictionPriorityDistribution": { // Distribution of predictions by priority
+    // e.g., "high": 2, "medium": 4
+  },
+  "predictionSeverityDistribution": { // Distribution of predictions by severity
+    // e.g., "critical": 1, "major": 3
+  },
+  "averageEstimatedTime": number, // Average estimatedTime for predictions
+  "topKeywords": string[], // List of top keywords from project keywords
+  "techStackList": string[] // List of technologies from project techStack
 }
 
 Ensure the JSON is valid and can be directly parsed.`;
@@ -479,6 +634,14 @@ Ensure the JSON is valid and can be directly parsed.`;
         );
         predictionsCount = llmResponse.predictionsCount;
         predictionTypeDistribution = llmResponse.predictionTypeDistribution;
+        predictionStatusDistribution = llmResponse.predictionStatusDistribution;
+        predictionPriorityDistribution =
+          llmResponse.predictionPriorityDistribution;
+        predictionSeverityDistribution =
+          llmResponse.predictionSeverityDistribution;
+        averageEstimatedTime = llmResponse.averageEstimatedTime;
+        topKeywords = llmResponse.topKeywords;
+        techStackList = llmResponse.techStackList;
       } catch (parseError: any) {
         this.logger.warn(
           `Initial parsing of cleaned JSON string failed for project reports for project ${projectId}. Attempting LLM-based cleanup. Error: ${parseError.message}`,
@@ -513,7 +676,20 @@ Expected JSON structure:
   "predictionTypeDistribution": { // Distribution of prediction types
     "user-story": number,
     "bug": number
-  }
+    // ... other prediction types if any
+  },
+  "predictionStatusDistribution": { // Distribution of predictions by status
+    // e.g., "new": 5, "in-progress": 3
+  },
+  "predictionPriorityDistribution": { // Distribution of predictions by priority
+    // e.g., "high": 2, "medium": 4
+  },
+  "predictionSeverityDistribution": { // Distribution of predictions by severity
+    // e.g., "critical": 1, "major": 3
+  },
+  "averageEstimatedTime": number, // Average estimatedTime for predictions
+  "topKeywords": string[], // List of top keywords from project keywords
+  "techStackList": string[] // List of technologies from project techStack
 }
 
 Text to clean and format:
@@ -543,7 +719,7 @@ ${cleanedText}
                 `LLM cleanup response content was null for project reports for project ${projectId} (Attempt ${cleanupAttempts}).`,
               );
               lastCleanupError = new Error(
-                `LLM cleanup response content was null for project reports for project ${projectId}.`,
+                'LLM cleanup response content was null for project reports for project.',
               );
               continue; // Continue to the next attempt
             }
@@ -555,6 +731,15 @@ ${cleanedText}
             );
             predictionsCount = llmResponse.predictionsCount;
             predictionTypeDistribution = llmResponse.predictionTypeDistribution;
+            predictionStatusDistribution =
+              llmResponse.predictionStatusDistribution;
+            predictionPriorityDistribution =
+              llmResponse.predictionPriorityDistribution;
+            predictionSeverityDistribution =
+              llmResponse.predictionSeverityDistribution;
+            averageEstimatedTime = llmResponse.averageEstimatedTime;
+            topKeywords = llmResponse.topKeywords;
+            techStackList = llmResponse.techStackList;
             break; // Exit the loop if parsing is successful
           } catch (cleanupError: any) {
             this.logger.warn(
@@ -594,9 +779,15 @@ ${cleanedText}
           .insert([
             {
               id: newReportId, // Include the generated ID
-              project_id: projectId,
+              project_id: projectId, // Link to the project
               predictions_count: predictionsCount,
               prediction_type_distribution: predictionTypeDistribution,
+              prediction_status_distribution: predictionStatusDistribution,
+              prediction_priority_distribution: predictionPriorityDistribution,
+              prediction_severity_distribution: predictionSeverityDistribution,
+              average_estimated_time: averageEstimatedTime,
+              top_keywords: topKeywords,
+              tech_stack_list: techStackList,
             },
           ])
           .select('*')
@@ -604,69 +795,51 @@ ${cleanedText}
 
       if (insertProjectError) {
         this.logger.error(
-          `Error inserting project report into Supabase: ${(insertProjectError as any).message}`,
+          `Error inserting project report for project ${projectId} into Supabase: ${insertProjectError.message}`,
           insertProjectError.stack,
         );
         // Do not throw an error here, just log it, as the report was generated
       }
 
-      console.log(`Reports generated and persisted for project ${projectId}.`);
-
-      // Mark the project report as generated
+      console.log(
+        `Project reports generated and persisted for project ${projectId}.`,
+      );
+      // Mark the project as having a generated report
       await this.projectsService.markReportGenerated(projectId);
-      console.log(`Project ${projectId} marked as report generated.`);
-
-      return { predictionsCount, predictionTypeDistribution };
+      return {
+        predictionsCount,
+        predictionTypeDistribution,
+        predictionStatusDistribution,
+        predictionPriorityDistribution,
+        predictionSeverityDistribution,
+        averageEstimatedTime,
+        topKeywords,
+        techStackList,
+      };
     } catch (error: any) {
       this.logger.error(
-        `Failed to generate reports for project ${projectId}:`,
+        `Failed to generate project reports for project ${projectId}:`,
         error.message,
         error.stack,
       );
       throw new InternalServerErrorException(
-        `Failed to generate reports for project ${projectId}: ${error.message}`,
+        `Failed to generate project reports for project ${projectId}: ${error.message}`,
       );
     }
   }
 
-  // The getter methods will now just call the generation methods
-  async getOverallProjectCompletionRate(): Promise<number> {
-    const reports = await this.generateOverallReports();
-    return reports.completionRate;
-  }
-
-  async getOverallProjectStatusDistribution(): Promise<{
-    [status: string]: number;
-  }> {
-    const reports = await this.generateOverallReports();
-    return reports.statusDistribution;
-  }
-
-  async getPredictionsCountForProject(projectId: string): Promise<number> {
-    const reports = await this.generateProjectReports(projectId);
-    return reports.predictionsCount;
-  }
-
-  async getPredictionTypeDistributionForProject(
-    projectId: string,
-  ): Promise<{ [type: string]: number }> {
-    const reports = await this.generateProjectReports(projectId);
-    return reports.predictionTypeDistribution;
-  }
-
-  // Removed file-based status methods as reports are generated on the fly
-  // Removed TODO comment as the main reporting logic is now implemented
   async getOverallReport(): Promise<any | undefined> {
     try {
       const { data, error } = await this.supabase
         .from('reports')
-        .select('completion_rate, status_distribution')
-        .is('project_id', null)
+        .select('*')
+        .is('project_id', null) // Filter for overall reports
         .order('created_at', { ascending: false })
-        .limit(1)
+        .limit(1) // Get the latest overall report
         .single();
 
       if (error && error.code !== 'PGRST116') {
+        // PGRST116 means no rows found
         this.logger.error(
           `Error fetching overall report from Supabase: ${error.message}`,
           error.stack,
@@ -674,38 +847,15 @@ ${cleanedText}
         throw new InternalServerErrorException(error.message);
       }
 
-      // If no overall report is found, generate one and return it
-      if (!data) {
-        this.logger.log('No overall report found, generating a new one.');
-        const generatedReport = await this.generateOverallReports();
-        // Fetch the newly generated report from the database to ensure consistency
-        const { data: newData, error: newError } = await this.supabase
-          .from('reports')
-          .select('completion_rate, status_distribution')
-          .is('project_id', null)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single();
-
-        if (newError && newError.code !== 'PGRST116') {
-          this.logger.error(
-            `Error fetching newly generated overall report from Supabase: ${newError.message}`,
-            newError.stack,
-          );
-          throw new InternalServerErrorException(newError.message);
-        }
-        return newData || undefined;
-      }
-
-      return data || undefined;
+      return data; // Returns undefined if no rows found
     } catch (error: any) {
       this.logger.error(
-        'Failed to fetch or generate overall report:',
+        'Failed to fetch overall report:',
         error.message,
         error.stack,
       );
       throw new InternalServerErrorException(
-        `Failed to fetch or generate overall report: ${error.message}`,
+        `Failed to fetch overall report: ${error.message}`,
       );
     }
   }
@@ -714,21 +864,22 @@ ${cleanedText}
     try {
       const { data, error } = await this.supabase
         .from('reports')
-        .select('predictions_count, prediction_type_distribution')
-        .eq('project_id', projectId)
+        .select('*')
+        .eq('project_id', projectId) // Filter for project-specific reports
         .order('created_at', { ascending: false })
-        .limit(1)
+        .limit(1) // Get the latest report for this project
         .single();
 
       if (error && error.code !== 'PGRST116') {
+        // PGRST116 means no rows found
         this.logger.error(
-          `Error fetching project report from Supabase: ${error.message}`,
+          `Error fetching project report for project ${projectId} from Supabase: ${error.message}`,
           error.stack,
         );
         throw new InternalServerErrorException(error.message);
       }
 
-      return data || undefined;
+      return data; // Returns undefined if no rows found
     } catch (error: any) {
       this.logger.error(
         `Failed to fetch project report for project ${projectId}:`,
