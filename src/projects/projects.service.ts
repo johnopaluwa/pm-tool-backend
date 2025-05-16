@@ -7,12 +7,14 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import * as crypto from 'crypto'; // Import the crypto module
 import { SupabaseMapper } from '../supabase/supabase-mapper'; // Import the mapper
 import { SupabaseService } from '../supabase/supabase.service';
+import { WorkflowsService } from '../workflows/workflows.service'; // Import WorkflowsService
+import { CreateProjectDto } from './dto/create-project.dto'; // Import CreateProjectDto
 
 export interface Project {
   id: string;
   name: string;
   client: string;
-  status: 'new' | 'predicting' | 'completed';
+  status: string; // Changed type to string to accommodate workflow statuses
   description: string;
   projectType: string;
   clientIndustry: string;
@@ -22,6 +24,7 @@ export interface Project {
   keywords: string;
   businessSpecification: string;
   reportGenerated?: boolean; // Add reportGenerated flag
+  workflow_id?: string; // Add optional workflow_id
 }
 
 @Injectable()
@@ -29,7 +32,10 @@ export class ProjectsService {
   private supabase: SupabaseClient;
   private readonly logger = new Logger(ProjectsService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly workflowsService: WorkflowsService, // Inject WorkflowsService
+  ) {
     this.supabase = this.supabaseService.getClient();
   }
 
@@ -57,28 +63,48 @@ export class ProjectsService {
   }
 
   async addProject(
-    project: Omit<Project, 'id' | 'status' | 'name' | 'client'> & {
-      projectName: string;
-      clientName: string;
-    },
+    createProjectDto: CreateProjectDto, // Accept CreateProjectDto directly
   ): Promise<string> {
     const newProjectId = crypto.randomUUID(); // Generate UUID
+
+    // Determine initial status based on workflow_id
+    let initialStatus = 'new'; // Default status if no workflow
+    if (createProjectDto.workflow_id) {
+      // Fetch the default status of the first stage in the assigned workflow
+      const stages = await this.workflowsService.findStagesByWorkflowId(
+        createProjectDto.workflow_id,
+      );
+      if (stages && stages.length > 0) {
+        const firstStage = stages[0];
+        const statuses = await this.workflowsService.findStatusesByStageId(
+          firstStage.id,
+        );
+        const defaultStatus = statuses.find((status) => status.is_default);
+        if (defaultStatus) {
+          initialStatus = defaultStatus.name; // Use the name of the default status
+        } else if (statuses.length > 0) {
+          // If no default status is explicitly marked, use the first status in the first stage
+          initialStatus = statuses[0].name;
+        }
+      }
+    }
 
     const newProject = SupabaseMapper.toSupabaseProject({
       // Use mapper
       id: newProjectId, // Include the generated ID
-      name: project.projectName,
-      client: project.clientName,
-      status: 'new', // New projects start with status 'new'
+      name: createProjectDto.projectName,
+      client: createProjectDto.clientName,
+      status: initialStatus, // Set initial status
       reportGenerated: false, // New projects have reportGenerated as false
-      description: project.description,
-      projectType: project.projectType,
-      clientIndustry: project.clientIndustry,
-      techStack: project.techStack,
-      teamSize: project.teamSize,
-      duration: project.duration,
-      keywords: project.keywords,
-      businessSpecification: project.businessSpecification,
+      description: createProjectDto.description,
+      projectType: createProjectDto.projectType,
+      clientIndustry: createProjectDto.clientIndustry,
+      techStack: createProjectDto.techStack,
+      teamSize: createProjectDto.teamSize,
+      duration: createProjectDto.duration,
+      keywords: createProjectDto.keywords,
+      businessSpecification: createProjectDto.businessSpecification,
+      workflow_id: createProjectDto.workflow_id, // Include workflow_id
     });
 
     const { data, error } = await this.supabase
@@ -110,7 +136,7 @@ export class ProjectsService {
 
   async updateProjectStatus(
     id: string,
-    status: 'new' | 'predicting' | 'completed',
+    status: string, // Changed type to string
   ): Promise<Project | undefined> {
     const { data, error } = await this.supabase
       .from('projects')

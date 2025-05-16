@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config'; // Import ConfigModule
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { CustomizationModule } from './customization/customization.module'; // Import CustomizationModule
 import { PredictionReviewsModule } from './prediction-reviews/prediction-reviews.module';
 import { PredictionsModule } from './predictions/predictions.module';
 import { ProjectsModule } from './projects/projects.module'; // Corrected import path
@@ -16,6 +17,7 @@ import { SupabaseModule } from './supabase/supabase.module'; // Import SupabaseM
     PredictionReviewsModule,
     PredictionsModule,
     ReportsModule, // Add ReportsModule here
+    CustomizationModule, // Add CustomizationModule here
   ],
   controllers: [AppController],
   providers: [AppService],
