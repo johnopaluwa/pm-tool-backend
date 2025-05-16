@@ -25,34 +25,24 @@ export class CustomizationController {
     @Body() createFieldDto: CreateCustomFieldDto,
     @Req() req: any,
   ) {
-    // TODO: Extract organizationId from request (e.g., from user object attached by AuthGuard)
-    const organizationId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'; // Placeholder UUID for testing
-
     const fieldDefinition =
       await this.customizationService.createFieldDefinition({
         ...createFieldDto,
-        organization_id: organizationId,
       });
     return fieldDefinition;
   }
 
   @Get('fields')
   async getFieldDefinitions(@Req() req: any) {
-    // TODO: Extract organizationId from request
-    const organizationId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'; // Placeholder
     const fieldDefinitions =
-      await this.customizationService.getFieldDefinitions(organizationId);
+      await this.customizationService.getFieldDefinitions();
     return fieldDefinitions;
   }
 
   @Get('fields/:id')
   async getFieldDefinition(@Param('id') id: string, @Req() req: any) {
-    // TODO: Extract organizationId from request
-    const organizationId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'; // Placeholder
-    const fieldDefinition = await this.customizationService.getFieldDefinition(
-      id,
-      organizationId,
-    );
+    const fieldDefinition =
+      await this.customizationService.getFieldDefinition(id);
     return fieldDefinition;
   }
 
@@ -62,11 +52,8 @@ export class CustomizationController {
     @Body() updateFieldDto: UpdateCustomFieldDto,
     @Req() req: any,
   ) {
-    // TODO: Extract organizationId from request
-    const organizationId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'; // Placeholder
     const updatedField = await this.customizationService.updateFieldDefinition(
       id,
-      organizationId,
       updateFieldDto,
     );
     return updatedField;
@@ -74,9 +61,7 @@ export class CustomizationController {
 
   @Delete('fields/:id')
   async deleteFieldDefinition(@Param('id') id: string, @Req() req: any) {
-    // TODO: Extract organizationId from request
-    const organizationId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'; // Placeholder
-    await this.customizationService.deleteFieldDefinition(id, organizationId);
+    await this.customizationService.deleteFieldDefinition(id);
     return { success: true };
   }
 
@@ -86,12 +71,8 @@ export class CustomizationController {
     @Param('entityId') entityId: string,
     @Req() req: any,
   ) {
-    // TODO: Extract organizationId from request
-    const organizationId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'; // Placeholder
-    const fieldValues = await this.customizationService.getFieldValuesForEntity(
-      entityId,
-      organizationId,
-    );
+    const fieldValues =
+      await this.customizationService.getFieldValuesForEntity(entityId);
     return fieldValues;
   }
 

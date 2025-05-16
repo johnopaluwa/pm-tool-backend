@@ -10,7 +10,6 @@ export class CustomizationService {
     type: string;
     entity_type: string;
     options?: any;
-    organization_id: string;
   }) {
     const { data, error } = await this.supabaseService
       .getClient()
@@ -26,7 +25,7 @@ export class CustomizationService {
     return data ? data[0] : null;
   }
 
-  async getFieldDefinitions(organizationId: string, entityType?: string) {
+  async getFieldDefinitions(entityType?: string) {
     let query = this.supabaseService
       .getClient()
       .from('custom_field_definitions')
@@ -48,13 +47,12 @@ export class CustomizationService {
     return data;
   }
 
-  async getFieldDefinition(id: string, organizationId: string) {
+  async getFieldDefinition(id: string) {
     const { data, error } = await this.supabaseService
       .getClient()
       .from('custom_field_definitions')
       .select('*')
       .eq('id', id)
-      .eq('organization_id', organizationId)
       .single();
 
     if (error) {
@@ -67,7 +65,6 @@ export class CustomizationService {
 
   async updateFieldDefinition(
     id: string,
-    organizationId: string,
     updateData: { name?: string; type?: string; options?: any },
   ) {
     const { data, error } = await this.supabaseService
@@ -75,7 +72,6 @@ export class CustomizationService {
       .from('custom_field_definitions')
       .update(updateData)
       .eq('id', id)
-      .eq('organization_id', organizationId)
       .select();
 
     if (error) {
@@ -86,13 +82,12 @@ export class CustomizationService {
     return data ? data[0] : null;
   }
 
-  async deleteFieldDefinition(id: string, organizationId: string) {
+  async deleteFieldDefinition(id: string) {
     const { error } = await this.supabaseService
       .getClient()
       .from('custom_field_definitions')
       .delete()
-      .eq('id', id)
-      .eq('organization_id', organizationId);
+      .eq('id', id);
 
     if (error) {
       throw new Error(
@@ -102,14 +97,13 @@ export class CustomizationService {
     return { success: true };
   }
 
-  async getFieldValuesForEntity(entityId: string, organizationId: string) {
+  async getFieldValuesForEntity(entityId: string) {
     // First, get the IDs of custom field definitions for the organization
     const { data: fieldDefinitions, error: fieldDefinitionsError } =
       await this.supabaseService
         .getClient()
         .from('custom_field_definitions')
-        .select('id')
-        .eq('organization_id', organizationId);
+        .select('id');
 
     if (fieldDefinitionsError) {
       throw new Error(
@@ -117,7 +111,7 @@ export class CustomizationService {
       );
     }
 
-    const fieldIds = fieldDefinitions.map((def) => def.id);
+    const fieldIds = fieldDefinitions.map((def: any) => def.id);
 
     // If there are no custom field definitions for this organization, return an empty array
     if (fieldIds.length === 0) {
