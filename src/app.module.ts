@@ -8,6 +8,7 @@ import { PredictionsModule } from './predictions/predictions.module';
 import { ProjectsModule } from './projects/projects.module'; // Corrected import path
 import { ReportsModule } from './reports/reports.module'; // Import ReportsModule
 import { SupabaseModule } from './supabase/supabase.module'; // Import SupabaseModule
+import { TasksModule } from './tasks/tasks.module'; // Import TasksModule
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { SupabaseModule } from './supabase/supabase.module'; // Import SupabaseM
     PredictionsModule,
     ReportsModule, // Add ReportsModule here
     CustomizationModule, // Add CustomizationModule here
+    TasksModule, // Add TasksModule here
   ],
   controllers: [AppController],
   providers: [AppService],
