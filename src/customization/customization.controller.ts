@@ -71,8 +71,10 @@ export class CustomizationController {
     @Param('entityId') entityId: string,
     @Req() req: any,
   ) {
-    const fieldValues =
-      await this.customizationService.getFieldValuesForEntity(entityId);
+    const fieldValues = await this.customizationService.getFieldValuesForEntity(
+      entityType,
+      entityId,
+    );
     return fieldValues;
   }
 

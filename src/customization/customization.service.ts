@@ -97,13 +97,17 @@ export class CustomizationService {
     return { success: true };
   }
 
-  async getFieldValuesForEntity(entityId: string) {
-    // First, get the IDs of custom field definitions for the organization
+  async getFieldValuesForEntity(entityType: string, entityId: string) {
+    console.log(
+      `Fetching custom field values for entityType: ${entityType}, entityId: ${entityId}`,
+    ); // Add logging
+    // First, get the IDs of custom field definitions for the organization and entity type
     const { data: fieldDefinitions, error: fieldDefinitionsError } =
       await this.supabaseService
         .getClient()
         .from('custom_field_definitions')
-        .select('id');
+        .select('id')
+        .eq('entity_type', entityType);
 
     if (fieldDefinitionsError) {
       throw new Error(
