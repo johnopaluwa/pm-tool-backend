@@ -105,6 +105,7 @@ export class SupabaseMapper {
       keywords: data.keywords,
       businessSpecification: data.businessSpecification,
       reportGenerated: data.reportGenerated,
+      workflow_id: data.workflow_id,
     };
   }
 
