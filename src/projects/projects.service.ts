@@ -9,6 +9,7 @@ import { SupabaseMapper } from '../supabase/supabase-mapper'; // Import the mapp
 import { SupabaseService } from '../supabase/supabase.service';
 import { WorkflowsService } from '../workflows/workflows.service'; // Import WorkflowsService
 import { CreateProjectDto } from './dto/create-project.dto'; // Import CreateProjectDto
+import { UpdateProjectDto } from './dto/update-project.dto'; // Import UpdateProjectDto
 
 export interface Project {
   id: string;
@@ -174,6 +175,30 @@ export class ProjectsService {
 
     if (data) {
       console.log(`Project ${id} reportGenerated status updated to true`);
+      return SupabaseMapper.fromSupabaseProject(data); // Use mapper
+    }
+    return undefined;
+  }
+
+  async update(
+    id: string,
+    updateProjectDto: UpdateProjectDto,
+  ): Promise<Project | undefined> {
+    const { data, error } = await this.supabase
+      .from('projects')
+      .update(updateProjectDto)
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      // PGRST116 means no rows found
+      this.logger.error(`Error updating project in Supabase:`, error); // Log the entire error object
+      throw new InternalServerErrorException(error.message || 'Unknown error');
+    }
+
+    if (data) {
+      console.log(`Project ${id} updated`);
       return SupabaseMapper.fromSupabaseProject(data); // Use mapper
     }
     return undefined;

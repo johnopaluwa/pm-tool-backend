@@ -1,6 +1,7 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Put } from '@nestjs/common'; // Import Put
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectStatusDto } from './dto/update-project-status.dto';
+import { UpdateProjectDto } from './dto/update-project.dto'; // Import UpdateProjectDto
 import { ProjectsService } from './projects.service';
 
 @Controller('projects')
@@ -36,5 +37,10 @@ export class ProjectsController {
   @Patch(':id/mark-report-generated')
   markReportGenerated(@Param('id') id: string) {
     return this.projectsService.markReportGenerated(id);
+  }
+
+  @Put(':id')
+  update(@Param('id') id: string, @Body() updateProjectDto: UpdateProjectDto) {
+    return this.projectsService.update(id, updateProjectDto);
   }
 }
