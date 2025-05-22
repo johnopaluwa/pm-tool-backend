@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config'; // Import ConfigModule
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { CustomizationModule } from './customization/customization.module'; // Import CustomizationModule
+import { ImportModule } from './import/import.module';
 import { PredictionReviewsModule } from './prediction-reviews/prediction-reviews.module';
 import { PredictionsModule } from './predictions/predictions.module';
 import { ProjectsModule } from './projects/projects.module'; // Corrected import path
@@ -20,6 +21,7 @@ import { TasksModule } from './tasks/tasks.module'; // Import TasksModule
     ReportsModule, // Add ReportsModule here
     CustomizationModule, // Add CustomizationModule here
     TasksModule, // Add TasksModule here
+    ImportModule, // Add ImportModule here
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -14,4 +14,6 @@ export class CreateTaskDto {
   @IsOptional()
   @IsUUID()
   status_id?: string; // Add optional status_id
+  @IsOptional()
+  extra_data?: any;
 }
