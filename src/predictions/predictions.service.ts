@@ -169,13 +169,6 @@ ${historicalData || 'No historical data available.'}
 New Project Characteristics:
 
 Project Name: ${projectData.projectName}
-Client Name: ${projectData.clientName}
-Project Type: ${projectData.projectType}
-Client Industry: ${projectData.clientIndustry}
-Technology Stack: ${projectData.techStack.join(', ')}
-Estimated Team Size: ${projectData.teamSize}
-Estimated Duration: ${projectData.duration}
-Keywords: ${projectData.keywords}
 Business Specification: ${projectData.businessSpecification}
 Description: ${projectData.description}
 
