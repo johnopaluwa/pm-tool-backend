@@ -445,6 +445,7 @@ ${cleanedText}
     averageEstimatedTime: number;
     topKeywords: string[];
     techStackList: string[];
+    totalEstimatedTimeForBugsAndStories: number; // Added for the sum of estimated time for bugs and user stories
   }> {
     let llmResponse: {
       predictionsCount: number;
@@ -455,6 +456,7 @@ ${cleanedText}
       averageEstimatedTime: number;
       topKeywords: string[];
       techStackList: string[];
+      totalEstimatedTimeForBugsAndStories: number; // Added for the sum of estimated time for bugs and user stories
     };
     let predictionsCount: number = 0; // Initialize with default value
     let predictionTypeDistribution: { [type: string]: number } = {
@@ -468,6 +470,7 @@ ${cleanedText}
     let averageEstimatedTime: number = 0;
     let topKeywords: string[] = [];
     let techStackList: string[] = [];
+    let totalEstimatedTimeForBugsAndStories: number = 0; // Initialize the new variable
 
     try {
       // Fetch necessary data from Supabase
@@ -551,7 +554,8 @@ Provide the output as a JSON object with the following structure:
   },
   "averageEstimatedTime": number, // Average estimatedTime for predictions
   "topKeywords": string[], // List of top keywords from project keywords
-  "techStackList": string[] // List of technologies from project techStack
+  "techStackList": string[], // List of technologies from project techStack
+  "totalEstimatedTimeForBugsAndStories": number // Total estimated time for predictions of type 'bug' or 'user-story'
 }
 
 Ensure the JSON is valid and can be directly parsed.`;
@@ -644,6 +648,8 @@ Ensure the JSON is valid and can be directly parsed.`;
         averageEstimatedTime = llmResponse.averageEstimatedTime;
         topKeywords = llmResponse.topKeywords;
         techStackList = llmResponse.techStackList;
+        totalEstimatedTimeForBugsAndStories =
+          llmResponse.totalEstimatedTimeForBugsAndStories; // Extract the new value
       } catch (parseError: any) {
         this.logger.warn(
           `Initial parsing of cleaned JSON string failed for project reports for project ${projectId}. Attempting LLM-based cleanup. Error: ${parseError.message}`,
@@ -742,6 +748,8 @@ ${cleanedText}
             averageEstimatedTime = llmResponse.averageEstimatedTime;
             topKeywords = llmResponse.topKeywords;
             techStackList = llmResponse.techStackList;
+            totalEstimatedTimeForBugsAndStories =
+              llmResponse.totalEstimatedTimeForBugsAndStories; // Extract the new value
             break; // Exit the loop if parsing is successful
           } catch (cleanupError: any) {
             this.logger.warn(
@@ -790,6 +798,7 @@ ${cleanedText}
               average_estimated_time: averageEstimatedTime,
               top_keywords: topKeywords,
               tech_stack_list: techStackList,
+              total_estimated_time: totalEstimatedTimeForBugsAndStories, // Include the new value
             },
           ])
           .select('*')
@@ -824,6 +833,7 @@ ${cleanedText}
         averageEstimatedTime,
         topKeywords,
         techStackList,
+        totalEstimatedTimeForBugsAndStories, // Include the new value in the return
       };
     } catch (error: any) {
       this.logger.error(
