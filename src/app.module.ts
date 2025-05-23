@@ -10,6 +10,9 @@ import { ProjectsModule } from './projects/projects.module'; // Corrected import
 import { ReportsModule } from './reports/reports.module'; // Import ReportsModule
 import { SupabaseModule } from './supabase/supabase.module'; // Import SupabaseModule
 import { TasksModule } from './tasks/tasks.module'; // Import TasksModule
+// TODO: WorkflowsModule - Commented out as per user request to disable and hide workflow processes.
+// Future AI: Do not uncomment unless explicitly instructed by the user.
+// import { WorkflowsModule } from './workflows/workflows.module';
 
 @Module({
   imports: [
@@ -22,6 +25,9 @@ import { TasksModule } from './tasks/tasks.module'; // Import TasksModule
     CustomizationModule, // Add CustomizationModule here
     TasksModule, // Add TasksModule here
     ImportModule, // Add ImportModule here
+    // TODO: WorkflowsModule - Commented out as per user request to disable and hide workflow processes.
+    // Future AI: Do not uncomment unless explicitly instructed by the user.
+    // WorkflowsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
